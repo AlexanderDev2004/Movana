@@ -1,4 +1,5 @@
 import { logKey } from './workspace'
+import type { TimelineKind } from './timeline'
 
 interface ManualEntryInput {
   odoAwal: number
@@ -24,5 +25,55 @@ export function saveManualLog(workspaceId: string, input: ManualEntryInput): boo
     return true
   } catch {
     return false
+  }
+}
+
+export interface TimelineImportEntry {
+  tanggal: string // YYYY-MM-DD
+  km: number
+  kotor: number
+  rincianKm?: Record<TimelineKind, number>
+  rincian?: { platform: string; jumlah: number }[]
+}
+
+/**
+ * Simpan hasil import Timeline ke log workspace.
+ * Digabung per tanggal (import menang bila tanggal sama), terbaru dulu, max 180 entri.
+ * @returns jumlah hari tersimpan (0 bila gagal)
+ */
+export function saveTimelineImport(workspaceId: string, entries: TimelineImportEntry[]): number {
+  try {
+    if (entries.length === 0) return 0
+    const key = logKey(workspaceId)
+    const raw = localStorage.getItem(key) ?? '[]'
+    const parsed: unknown = JSON.parse(raw)
+    const list = Array.isArray(parsed) ? parsed : []
+    const byDate = new Map<string, unknown>()
+    for (const e of list) {
+      if (e && typeof e === 'object' && typeof (e as { tanggal?: unknown }).tanggal === 'string') {
+        byDate.set((e as { tanggal: string }).tanggal, e)
+      }
+    }
+    for (const e of entries) {
+      byDate.set(e.tanggal, {
+        tanggal: e.tanggal,
+        odoAwal: 0,
+        odoAkhir: 0,
+        kotor: Math.round(e.kotor),
+        totalKm: e.km,
+        sumber: 'linimasa' as const,
+        rincianKm: e.rincianKm,
+        rincian: e.rincian,
+      })
+    }
+    const merged = [...byDate.values()].sort((a, b) => {
+      const ta = (a as { tanggal: string }).tanggal
+      const tb = (b as { tanggal: string }).tanggal
+      return ta < tb ? 1 : -1
+    })
+    localStorage.setItem(key, JSON.stringify(merged.slice(0, 180)))
+    return entries.length
+  } catch {
+    return 0
   }
 }

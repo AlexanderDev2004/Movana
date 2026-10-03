@@ -17,6 +17,7 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { CalcField } from './CalcField'
 import { CalcResults } from './CalcResults'
+import { TimelineImport } from './TimelineImport'
 
 export function Calculator({
   ws,
@@ -43,6 +44,7 @@ export function Calculator({
   const [biayaLain, setBiayaLain] = React.useState('15000')
   const [saved, setSaved] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
+  const [mode, setMode] = React.useState<'odo' | 'timeline'>('odo')
 
   const totalKotorMulti = multi
     ? ws.platforms.reduce((a, p) => a + (Number(perPlatform[p] ?? 0) || 0), 0)
@@ -135,6 +137,20 @@ export function Calculator({
           <Plus aria-hidden /> Baru
         </Button>
       </header>
+
+      <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1" role="tablist" aria-label="Mode hitung">
+        <Button variant={mode === 'odo' ? 'default' : 'ghost'} onClick={() => setMode('odo')} role="tab" aria-selected={mode === 'odo'}>
+          ⌨️ Odo manual
+        </Button>
+        <Button variant={mode === 'timeline' ? 'default' : 'ghost'} onClick={() => setMode('timeline')} role="tab" aria-selected={mode === 'timeline'}>
+          📍 Import Timeline
+        </Button>
+      </div>
+
+      {mode === 'timeline' ? (
+        <TimelineImport ws={ws} />
+      ) : (
+        <>
 
       <Card>
         <CardHeader>
@@ -251,6 +267,8 @@ export function Calculator({
           </Button>
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }
