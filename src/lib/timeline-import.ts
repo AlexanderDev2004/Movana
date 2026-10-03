@@ -65,14 +65,17 @@ export function dayShortId(tanggal: string): string {
   return w >= 0 ? DAY_SHORT_ID[w] : ''
 }
 
-/** Filter tampilan (tidak mengubah data / hasil simpan). */
+/** Filter tampilan (tidak mengubah data / hasil simpan).
+ * minKm dibandingkan ke KM hasil parse (stabil) supaya baris tidak
+ * "menghilang" saat user sedang mengetik koreksi KM. */
 export function filterTimelineRows(
   rows: TimelineRow[],
   filter: TimelineFilter,
   isFilled: (tanggal: string) => boolean,
 ): TimelineRow[] {
   return rows.filter((r) => {
-    if (r.km < filter.minKm) return false
+    const baseKm = Number.isFinite(r.kmParsed) ? r.kmParsed : r.km
+    if (baseKm < filter.minKm) return false
     if (filter.weekdaysOnly && isWeekendDay(r.tanggal)) return false
     if (filter.filledOnly && !isFilled(r.tanggal)) return false
     return true

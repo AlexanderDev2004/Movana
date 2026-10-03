@@ -566,30 +566,13 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                     {detail && <ModeBadges row={r} />}
                   </td>
                   <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1">
-                      <Input
-                        inputMode="decimal"
-                        autoComplete="off"
-                        placeholder={String(r.kmParsed)}
-                        value={kmEdit[r.tanggal] ?? ''}
-                        onChange={(e) => setKmEdit((p) => ({ ...p, [r.tanggal]: e.target.value }))}
-                        className="h-9 w-20 text-right tabular-nums"
-                        aria-label={`KM ${r.tanggal}`}
-                      />
-                      {r.edited && (
-                        <button
-                          onClick={() => resetKm(r.tanggal)}
-                          title={`Kembalikan ke ${r.kmParsed} km`}
-                          className="text-muted-foreground hover:text-foreground text-base leading-none px-0.5"
-                          aria-label={`Reset KM ${r.tanggal}`}
-                        >
-                          ↺
-                        </button>
-                      )}
-                    </div>
-                    {r.edited && (
-                      <div className="text-[11px] text-muted-foreground">asli {r.kmParsed}</div>
-                    )}
+                    <KmCell
+                      row={r}
+                      value={kmEdit[r.tanggal] ?? ''}
+                      onChange={(v) => setKmEdit((p) => ({ ...p, [r.tanggal]: v }))}
+                      onReset={() => resetKm(r.tanggal)}
+                      clickToEdit={!detail}
+                    />
                   </td>
                   {detail && <td className="px-2 py-1.5 text-right whitespace-nowrap">{r.liter}</td>}
                   <td className="px-2 py-1.5 text-right whitespace-nowrap">{formatRp(r.biayaBbm)}</td>
@@ -671,7 +654,8 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
-        Baris disorot = KM di atas rata-rata ({Math.round(avgKm)} km/hari).
+        Baris disorot = KM di atas rata-rata ({Math.round(avgKm)} km/hari). Ketuk angka KM
+        untuk koreksi (Esc = batal).
         {!detail && ' Ketuk ▸ di tanggal untuk rincian moda.'}
       </p>
 
@@ -703,6 +687,77 @@ function DateCell({ tanggal }: { tanggal: string }) {
       >
         {dayShortId(tanggal)}
       </span>
+    </div>
+  )
+}
+
+/**
+ * Sel KM: angka statis + ✏️ (klik → jadi input) di mode Ringkas,
+ * input langsung di mode Detail. Ukuran sama (h-9 w-20) supaya tidak layout shift.
+ */
+function KmCell({
+  row: r,
+  value,
+  onChange,
+  onReset,
+  clickToEdit,
+}: {
+  row: TimelineRow
+  value: string
+  onChange: (v: string) => void
+  onReset: () => void
+  clickToEdit: boolean
+}) {
+  const [editing, setEditing] = React.useState(false)
+  const showInput = !clickToEdit || editing
+  const display = value.trim() !== '' ? value : String(r.kmParsed)
+
+  return (
+    <div>
+      <div className="flex items-center justify-end gap-1">
+        {showInput ? (
+          <Input
+            inputMode="decimal"
+            autoComplete="off"
+            autoFocus={clickToEdit}
+            placeholder={String(r.kmParsed)}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={() => {
+              if (clickToEdit) setEditing(false)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') {
+                onChange('')
+                setEditing(false)
+              }
+            }}
+            className="h-9 w-20 text-right tabular-nums"
+            aria-label={`KM ${r.tanggal}`}
+          />
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            title="Ketuk untuk koreksi KM"
+            className="h-9 w-20 rounded-md border border-transparent hover:border-input hover:bg-muted px-2 text-right tabular-nums"
+            aria-label={`Koreksi KM ${r.tanggal}, saat ini ${display} km`}
+          >
+            {display} <span className="text-xs text-muted-foreground">✏️</span>
+          </button>
+        )}
+        {r.edited && (
+          <button
+            onClick={onReset}
+            title={`Kembalikan ke ${r.kmParsed} km`}
+            className="text-muted-foreground hover:text-foreground text-base leading-none px-0.5"
+            aria-label={`Reset KM ${r.tanggal}`}
+          >
+            ↺
+          </button>
+        )}
+      </div>
+      {r.edited && <div className="text-[11px] text-muted-foreground">asli {r.kmParsed}</div>}
     </div>
   )
 }
