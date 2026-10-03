@@ -89,6 +89,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <Link to="/workspace" activeProps={{ className: 'font-bold' }}>
             Workspace
           </Link>
+          <Link to="/riwayat" activeProps={{ className: 'font-bold' }}>
+            Riwayat
+          </Link>
           <span className="ml-auto">
             <WorkspaceNav />
           </span>

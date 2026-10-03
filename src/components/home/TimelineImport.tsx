@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Link } from '@tanstack/react-router'
 import { FileJson, Upload } from 'lucide-react'
 import { formatRp } from '~/lib/calc'
 import type { Platform } from '~/lib/calc'
@@ -217,7 +218,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         setDuplicate(true)
       }
       setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
+      setError(null)
     }
   }
 
@@ -682,6 +683,18 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       <Button size="lg" className="w-full text-base font-bold" onClick={simpan}>
         {saved ? 'Tersimpan ✓' : `Simpan ${totals.days} hari ke log`}
       </Button>
+
+      {saved && (
+        <div className="rounded-xl bg-green-600/10 border border-green-600/30 p-3 flex items-center gap-2">
+          <p className="flex-1 text-sm font-bold">Berhasil disimpan ✓</p>
+          <Button size="sm" asChild>
+            <Link to="/riwayat">Lihat Riwayat</Link>
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setSaved(false)}>
+            Tutup
+          </Button>
+        </div>
+      )}
 
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Rumus per baris</summary>

@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Link } from '@tanstack/react-router'
 import { ArrowLeft, Fuel, Gauge, Plus, Wallet } from 'lucide-react'
 import { formatRp, hitungHarian } from '~/lib/calc'
 import type { Platform } from '~/lib/calc'
@@ -74,10 +75,16 @@ export function Calculator({
       : null
 
   const simpanKeLog = () => {
+    if (!hasil) {
+      setSaveError('Lengkapi odometer & konsumsi dulu sebelum menyimpan')
+      return
+    }
     const ok = saveManualLog(ws.id, {
       odoAwal: Number(odoAwal),
       odoAkhir: Number(odoAkhir),
       kotor: kotorEfektif,
+      biayaBensin: hasil.biayaBensin,
+      biayaLain: Math.round(Number(biayaLain) || 0),
       rincian:
         multi && withIncome
           ? ws.platforms.map((p) => ({ platform: p, jumlah: Number(perPlatform[p] ?? 0) || 0 }))
@@ -86,7 +93,6 @@ export function Calculator({
     if (ok) {
       setSaved(true)
       setSaveError(null)
-      setTimeout(() => setSaved(false), 2000)
     } else {
       setSaveError('Gagal menyimpan ke log harian')
     }
@@ -246,6 +252,18 @@ export function Calculator({
 
       {hasil && (
         <CalcResults hasil={hasil} withIncome={withIncome} perPlatformSummary={perPlatformSummary} />
+      )}
+
+      {saved && (
+        <div className="rounded-xl bg-green-600/10 border border-green-600/30 p-3 flex items-center gap-2">
+          <p className="flex-1 text-sm font-bold">Berhasil disimpan ✓</p>
+          <Button size="sm" asChild>
+            <Link to="/riwayat">Lihat Riwayat</Link>
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setSaved(false)}>
+            Tutup
+          </Button>
+        </div>
       )}
 
       <details className="text-xs text-muted-foreground">

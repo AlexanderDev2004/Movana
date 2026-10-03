@@ -169,14 +169,39 @@ export interface LogEntry {
   kotor: number
   /** Bila diisi (hasil import Linimasa), KM diambil dari sini, bukan odoAkhir-odoAwal */
   totalKm?: number
+  /** Biaya BBM (Rp). Entri lama bisa kosong → dianggap 0. */
+  biayaBensin?: number
+  /** Biaya lain (Rp, parkir/makan/dll). Opsional. */
+  biayaLain?: number
   sumber?: EntrySumber
   rincianKm?: { motor: number; mobil: number; jalan: number; lain: number }
+  /** Rincian pendapatan per platform (mode multi). Opsional. */
+  rincian?: { platform: string; jumlah: number }[]
 }
 
 /** KM sebuah entri: prioritas totalKm (estimasi Linimasa), fallback selisih odometer */
 export function kmOf(e: Pick<LogEntry, 'totalKm' | 'odoAwal' | 'odoAkhir'>): number {
   if (typeof e.totalKm === 'number' && Number.isFinite(e.totalKm)) return e.totalKm
   return (e.odoAkhir ?? 0) - (e.odoAwal ?? 0)
+}
+
+/** Biaya BBM sebuah entri (default 0 untuk entri lama). */
+export function bbmOf(e: Pick<LogEntry, 'biayaBensin'>): number {
+  return typeof e.biayaBensin === 'number' && Number.isFinite(e.biayaBensin)
+    ? Math.max(0, Math.round(e.biayaBensin))
+    : 0
+}
+
+/** Biaya lain sebuah entri (default 0). */
+export function biayaLainOf(e: Pick<LogEntry, 'biayaLain'>): number {
+  return typeof e.biayaLain === 'number' && Number.isFinite(e.biayaLain)
+    ? Math.max(0, Math.round(e.biayaLain))
+    : 0
+}
+
+/** Bersih = kotor − (BBM + lain). Untuk mode tanpa pendapatan (kotor 0) hasilnya minus = pengeluaran. */
+export function bersihOf(e: Pick<LogEntry, 'kotor' | 'biayaBensin' | 'biayaLain'>): number {
+  return (Math.round(e.kotor) || 0) - bbmOf(e) - biayaLainOf(e)
 }
 
 function importHashKey(workspaceId: string | null): string {

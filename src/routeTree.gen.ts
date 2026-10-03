@@ -15,6 +15,7 @@ import { Route as DeferredRouteImport } from './routes/deferred'
 import { Route as PostsRouteRouteImport } from './routes/posts.route'
 import { Route as PreferencesRouteImport } from './routes/preferences'
 import { Route as RedirectRouteImport } from './routes/redirect'
+import { Route as RiwayatRouteImport } from './routes/riwayat'
 import { Route as UsersRouteRouteImport } from './routes/users.route'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as PathlessLayoutNestedLayoutRouteImport } from './routes/_pathlessLayout/_nested-layout'
@@ -55,6 +56,11 @@ const PreferencesRoute = PreferencesRouteImport.update({
 const RedirectRoute = RedirectRouteImport.update({
   id: '/redirect',
   path: '/redirect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RiwayatRoute = RiwayatRouteImport.update({
+  id: '/riwayat',
+  path: '/riwayat',
   getParentRoute: () => rootRouteImport,
 } as any)
 const UsersRouteRoute = UsersRouteRouteImport.update({
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/deferred': typeof DeferredRoute
   '/preferences': typeof PreferencesRoute
   '/redirect': typeof RedirectRoute
+  '/riwayat': typeof RiwayatRoute
   '/workspace': typeof WorkspaceRoute
   '/api/users': typeof ApiUsersRouteWithChildren
   '/posts/$postId': typeof PostsPostIdRoute
@@ -143,6 +150,7 @@ export interface FileRoutesByTo {
   '/deferred': typeof DeferredRoute
   '/preferences': typeof PreferencesRoute
   '/redirect': typeof RedirectRoute
+  '/riwayat': typeof RiwayatRoute
   '/workspace': typeof WorkspaceRoute
   '/api/users': typeof ApiUsersRouteWithChildren
   '/posts/$postId': typeof PostsPostIdRoute
@@ -163,6 +171,7 @@ export interface FileRoutesById {
   '/deferred': typeof DeferredRoute
   '/preferences': typeof PreferencesRoute
   '/redirect': typeof RedirectRoute
+  '/riwayat': typeof RiwayatRoute
   '/workspace': typeof WorkspaceRoute
   '/_pathlessLayout/_nested-layout': typeof PathlessLayoutNestedLayoutRouteWithChildren
   '/api/users': typeof ApiUsersRouteWithChildren
@@ -184,6 +193,7 @@ export interface FileRouteTypes {
     | '/deferred'
     | '/preferences'
     | '/redirect'
+    | '/riwayat'
     | '/workspace'
     | '/api/users'
     | '/posts/$postId'
@@ -200,6 +210,7 @@ export interface FileRouteTypes {
     | '/deferred'
     | '/preferences'
     | '/redirect'
+    | '/riwayat'
     | '/workspace'
     | '/api/users'
     | '/posts/$postId'
@@ -219,6 +230,7 @@ export interface FileRouteTypes {
     | '/deferred'
     | '/preferences'
     | '/redirect'
+    | '/riwayat'
     | '/workspace'
     | '/_pathlessLayout/_nested-layout'
     | '/api/users'
@@ -240,6 +252,7 @@ export interface RootRouteChildren {
   DeferredRoute: typeof DeferredRoute
   PreferencesRoute: typeof PreferencesRoute
   RedirectRoute: typeof RedirectRoute
+  RiwayatRoute: typeof RiwayatRoute
   WorkspaceRoute: typeof WorkspaceRoute
   ApiUsersRoute: typeof ApiUsersRouteWithChildren
   PostsPostIdDeepRoute: typeof PostsPostIdDeepRoute
@@ -287,6 +300,13 @@ declare module '@tanstack/react-router' {
       path: '/redirect'
       fullPath: '/redirect'
       preLoaderRoute: typeof RedirectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/riwayat': {
+      id: '/riwayat'
+      path: '/riwayat'
+      fullPath: '/riwayat'
+      preLoaderRoute: typeof RiwayatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/users': {
@@ -454,6 +474,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeferredRoute: DeferredRoute,
   PreferencesRoute: PreferencesRoute,
   RedirectRoute: RedirectRoute,
+  RiwayatRoute: RiwayatRoute,
   WorkspaceRoute: WorkspaceRoute,
   ApiUsersRoute: ApiUsersRouteWithChildren,
   PostsPostIdDeepRoute: PostsPostIdDeepRoute,

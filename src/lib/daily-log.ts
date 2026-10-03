@@ -5,6 +5,10 @@ interface ManualEntryInput {
   odoAwal: number
   odoAkhir: number
   kotor: number
+  /** Biaya BBM hasil rumus (disimpan agar Riwayat bisa hitung bersih). */
+  biayaBensin?: number
+  /** Biaya lain (parkir/makan/dll). */
+  biayaLain?: number
   rincian?: { platform: string; jumlah: number }[]
 }
 
@@ -12,16 +16,29 @@ export function saveManualLog(workspaceId: string, input: ManualEntryInput): boo
   try {
     const key = logKey(workspaceId)
     const raw = localStorage.getItem(key) ?? '[]'
-    const list = JSON.parse(raw)
+    const parsed: unknown = JSON.parse(raw)
+    const list = Array.isArray(parsed) ? parsed : []
+    const tanggal = new Date().toISOString().slice(0, 10)
     const entry = {
-      tanggal: new Date().toISOString().slice(0, 10),
-      odoAwal: input.odoAwal,
-      odoAkhir: input.odoAkhir,
-      kotor: input.kotor,
+      tanggal,
+      odoAwal: Math.round(Number(input.odoAwal) || 0),
+      odoAkhir: Math.round(Number(input.odoAkhir) || 0),
+      kotor: Math.round(Number(input.kotor) || 0),
+      biayaBensin: Math.round(Number(input.biayaBensin) || 0),
+      biayaLain: Math.round(Number(input.biayaLain) || 0),
       sumber: 'manual' as const,
       rincian: input.rincian,
     }
-    localStorage.setItem(key, JSON.stringify([entry, ...list].slice(0, 60)))
+    // Gabung per tanggal (simpan ulang hari yang sama menimpa, bukan duplikat).
+    const rest = list.filter(
+      (e) => !(e && typeof e === 'object' && (e as { tanggal?: unknown }).tanggal === tanggal),
+    )
+    const merged = [entry, ...rest].sort((a, b) => {
+      const ta = (a as { tanggal: string }).tanggal
+      const tb = (b as { tanggal: string }).tanggal
+      return ta < tb ? 1 : ta > tb ? -1 : 0
+    })
+    localStorage.setItem(key, JSON.stringify(merged.slice(0, 180)))
     return true
   } catch {
     return false
