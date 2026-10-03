@@ -29,6 +29,7 @@ import { CalcField } from './CalcField'
 
 const MAX_FILE_BYTES = 300 * 1024 * 1024
 const MIN_KM_OPTIONS = [0, 10, 15, 20]
+const DEFAULT_MIN_KM = 15
 
 export function TimelineImport({ ws }: { ws: Workspace }) {
   const multi = isMultiPlatform(ws)
@@ -49,8 +50,10 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   const [kotorEdit, setKotorEdit] = React.useState<Record<string, string>>({})
   const [platEdit, setPlatEdit] = React.useState<Record<string, Record<string, string>>>({})
 
+  const [view, setView] = React.useState<'ringkas' | 'detail'>('ringkas')
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
   const [filter, setFilter] = React.useState<TimelineFilter>({
-    minKm: 10,
+    minKm: DEFAULT_MIN_KM,
     weekdaysOnly: false,
     filledOnly: false,
   })
@@ -99,7 +102,8 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
     setKmEdit({})
     setKotorEdit({})
     setPlatEdit({})
-    setFilter({ minKm: 10, weekdaysOnly: false, filledOnly: false })
+    setExpanded({})
+    setFilter({ minKm: DEFAULT_MIN_KM, weekdaysOnly: false, filledOnly: false })
     setShowBulk(false)
     setBulkAmount('')
   }
@@ -111,6 +115,8 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       delete next[tanggal]
       return next
     })
+
+  const toggleExpand = (tanggal: string) => setExpanded((p) => ({ ...p, [tanggal]: !p[tanggal] }))
 
   /** Hari dianggap "sudah isi pendapatan" bila user mengetik sesuatu (termasuk 0). */
   const isFilled = React.useCallback(
@@ -154,6 +160,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   const filledRows = withIncome ? rows.filter((r) => isFilled(r.tanggal)) : []
   const bersihFilled = filledRows.reduce((a, r) => a + r.bersih, 0)
   const masukFilled = filledRows.reduce((a, r) => a + r.pendapatan, 0)
+  const visibleFilled = withIncome ? visible.filter((r) => isFilled(r.tanggal)) : []
 
   const kplNum = Number(kmPerLiter)
   const kplWarn = kmPerLiter.trim() !== '' && Number.isFinite(kplNum) && (kplNum < 25 || kplNum > 60)
@@ -254,7 +261,11 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
     )
   }
 
-  const hasilLabel = withIncome ? 'Bersih' : 'Keluar (BBM)'
+  const hasilLabel = withIncome ? 'Bersih' : 'Keluar'
+  const detail = view === 'detail'
+  const footPendapatan = visible.reduce((a, r) => a + r.pendapatan, 0)
+  const footBiaya = visible.reduce((a, r) => a + r.biayaBbm, 0)
+  const colSpan = (detail ? 7 : 5) - (withIncome ? 0 : 1)
 
   return (
     <div className="space-y-4">
@@ -357,6 +368,26 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                 Sudah terisi
               </Button>
             )}
+          </div>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="Mode tampilan tabel">
+            <Button
+              size="sm"
+              variant={!detail ? 'default' : 'ghost'}
+              onClick={() => setView('ringkas')}
+              role="tab"
+              aria-selected={!detail}
+            >
+              Ringkas
+            </Button>
+            <Button
+              size="sm"
+              variant={detail ? 'default' : 'ghost'}
+              onClick={() => setView('detail')}
+              role="tab"
+              aria-selected={detail}
+            >
+              Detail
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -498,113 +529,150 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
 
       {/* Tampilan tabel (layar ≥ md) */}
       <div className="hidden md:block overflow-x-auto rounded-xl border">
-        <table className="w-full min-w-[680px] text-sm tabular-nums">
+        <table
+          className={`w-full text-sm tabular-nums ${detail ? 'min-w-[720px]' : 'min-w-[560px]'}`}
+        >
           <thead>
             <tr className="bg-muted text-left text-xs text-muted-foreground">
               <th className="px-2 py-2 font-medium">Tanggal</th>
               <th className="px-2 py-2 font-medium text-right">KM</th>
-              <th className="px-2 py-2 font-medium text-right">Liter</th>
-              <th className="px-2 py-2 font-medium text-right">Biaya BBM</th>
+              {detail && <th className="px-2 py-2 font-medium text-right">Liter</th>}
+              <th className="px-2 py-2 font-medium text-right" title="Biaya BBM">
+                BBM
+              </th>
               {withIncome && <th className="px-2 py-2 font-medium text-right">Pendapatan</th>}
-              <th className="px-2 py-2 font-medium text-right">{hasilLabel}</th>
-              <th className="px-2 py-2 font-medium">Keterangan</th>
+              <th className="px-2 py-2 font-medium text-right whitespace-nowrap">{hasilLabel}</th>
+              {detail && <th className="px-2 py-2 font-medium">Keterangan</th>}
             </tr>
           </thead>
           <tbody>
             {visible.map((r) => (
-              <tr
-                key={r.tanggal}
-                className={`border-t align-top ${r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}`}
-              >
-                <td className="px-2 py-1.5 whitespace-nowrap">
-                  <DateCell tanggal={r.tanggal} />
-                  <ModeBadges row={r} />
-                </td>
-                <td className="px-2 py-1.5 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Input
-                      inputMode="decimal"
-                      autoComplete="off"
-                      placeholder={String(r.kmParsed)}
-                      value={kmEdit[r.tanggal] ?? ''}
-                      onChange={(e) => setKmEdit((p) => ({ ...p, [r.tanggal]: e.target.value }))}
-                      className="h-9 w-20 text-right tabular-nums"
-                      aria-label={`KM ${r.tanggal}`}
-                    />
-                    {r.edited && (
-                      <button
-                        onClick={() => resetKm(r.tanggal)}
-                        title={`Kembalikan ke ${r.kmParsed} km`}
-                        className="text-muted-foreground hover:text-foreground text-base leading-none px-0.5"
-                        aria-label={`Reset KM ${r.tanggal}`}
-                      >
-                        ↺
-                      </button>
-                    )}
-                  </div>
-                  {r.edited && (
-                    <div className="text-[11px] text-muted-foreground">asli {r.kmParsed}</div>
-                  )}
-                </td>
-                <td className="px-2 py-1.5 text-right">{r.liter}</td>
-                <td className="px-2 py-1.5 text-right">{formatRp(r.biayaBbm)}</td>
-                {withIncome && (
-                  <td className="px-2 py-1.5 text-right">
-                    <IncomeInputs
-                      tanggal={r.tanggal}
-                      multi={multi}
-                      platforms={ws.platforms}
-                      kotorEdit={kotorEdit}
-                      platEdit={platEdit}
-                      setKotorEdit={setKotorEdit}
-                      setPlatEdit={setPlatEdit}
-                    />
+              <React.Fragment key={r.tanggal}>
+                <tr className={`border-t ${r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}`}>
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    <div className="flex items-center gap-1">
+                      {!detail && (
+                        <button
+                          onClick={() => toggleExpand(r.tanggal)}
+                          className="text-muted-foreground hover:text-foreground text-sm leading-none w-4"
+                          aria-expanded={!!expanded[r.tanggal]}
+                          aria-label={expanded[r.tanggal] ? `Tutup rincian ${r.tanggal}` : `Buka rincian ${r.tanggal}`}
+                        >
+                          {expanded[r.tanggal] ? '▾' : '▸'}
+                        </button>
+                      )}
+                      <DateCell tanggal={r.tanggal} />
+                    </div>
+                    {detail && <ModeBadges row={r} />}
                   </td>
-                )}
-                <td className="px-2 py-1.5 text-right">
-                  {withIncome && !isFilled(r.tanggal) ? (
-                    <span className="text-muted-foreground font-normal text-xs">belum diisi</span>
-                  ) : (
-                    <span className="font-bold">{formatRp(withIncome ? r.bersih : r.biayaBbm)}</span>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                    <div className="flex items-center justify-end gap-1">
+                      <Input
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder={String(r.kmParsed)}
+                        value={kmEdit[r.tanggal] ?? ''}
+                        onChange={(e) => setKmEdit((p) => ({ ...p, [r.tanggal]: e.target.value }))}
+                        className="h-9 w-20 text-right tabular-nums"
+                        aria-label={`KM ${r.tanggal}`}
+                      />
+                      {r.edited && (
+                        <button
+                          onClick={() => resetKm(r.tanggal)}
+                          title={`Kembalikan ke ${r.kmParsed} km`}
+                          className="text-muted-foreground hover:text-foreground text-base leading-none px-0.5"
+                          aria-label={`Reset KM ${r.tanggal}`}
+                        >
+                          ↺
+                        </button>
+                      )}
+                    </div>
+                    {r.edited && (
+                      <div className="text-[11px] text-muted-foreground">asli {r.kmParsed}</div>
+                    )}
+                  </td>
+                  {detail && <td className="px-2 py-1.5 text-right whitespace-nowrap">{r.liter}</td>}
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap">{formatRp(r.biayaBbm)}</td>
+                  {withIncome && (
+                    <td className="px-2 py-1.5 text-right">
+                      <IncomeInputs
+                        tanggal={r.tanggal}
+                        multi={multi}
+                        platforms={ws.platforms}
+                        kotorEdit={kotorEdit}
+                        platEdit={platEdit}
+                        setKotorEdit={setKotorEdit}
+                        setPlatEdit={setPlatEdit}
+                      />
+                    </td>
                   )}
-                </td>
-                <td className="px-2 py-1.5 text-xs text-muted-foreground whitespace-nowrap">
-                  {r.keterangan}
-                </td>
-              </tr>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                    {withIncome && !isFilled(r.tanggal) ? (
+                      <span className="text-muted-foreground font-normal text-xs">belum diisi</span>
+                    ) : (
+                      <span className="font-bold">{formatRp(withIncome ? r.bersih : r.biayaBbm)}</span>
+                    )}
+                  </td>
+                  {detail && (
+                    <td className="px-2 py-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                      {r.keterangan}
+                    </td>
+                  )}
+                </tr>
+                {!detail && expanded[r.tanggal] && (
+                  <tr className={r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}>
+                    <td colSpan={colSpan} className="px-2 py-1.5 bg-muted/40">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        <ModeBadges row={r} />
+                        <span className="tabular-nums">Liter {r.liter}</span>
+                        <span>{r.keterangan}</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
           <tfoot>
             <tr className="border-t bg-muted/50 font-bold">
-              <td className="px-2 py-2">Total tampil</td>
-              <td className="px-2 py-2 text-right">
+              <td className="px-2 py-2 whitespace-nowrap">Total tampil</td>
+              <td className="px-2 py-2 text-right whitespace-nowrap">
                 {Math.round(visible.reduce((a, r) => a + r.km, 0) * 100) / 100}
               </td>
-              <td className="px-2 py-2 text-right">
-                {Math.round(visible.reduce((a, r) => a + r.liter, 0) * 100) / 100}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {formatRp(visible.reduce((a, r) => a + r.biayaBbm, 0))}
-              </td>
-              {withIncome && (
-                <td className="px-2 py-2 text-right">
-                  {formatRp(visible.reduce((a, r) => a + r.pendapatan, 0))}
+              {detail && (
+                <td className="px-2 py-2 text-right whitespace-nowrap">
+                  {Math.round(visible.reduce((a, r) => a + r.liter, 0) * 100) / 100}
                 </td>
               )}
-              <td className="px-2 py-2 text-right">
-                {formatRp(
-                  withIncome
-                    ? visible.reduce((a, r) => a + r.bersih, 0)
-                    : visible.reduce((a, r) => a + r.biayaBbm, 0),
+              <td className="px-2 py-2 text-right whitespace-nowrap">{formatRp(footBiaya)}</td>
+              {withIncome && (
+                <td className="px-2 py-2 text-right whitespace-nowrap">
+                  {footPendapatan === 0 ? (
+                    <span className="text-muted-foreground font-normal">—</span>
+                  ) : (
+                    formatRp(footPendapatan)
+                  )}
+                </td>
+              )}
+              <td className="px-2 py-2 text-right whitespace-nowrap">
+                {withIncome && visibleFilled.length === 0 ? (
+                  <span className="text-muted-foreground font-normal">—</span>
+                ) : (
+                  formatRp(
+                    withIncome
+                      ? visible.reduce((a, r) => a + r.bersih, 0)
+                      : footBiaya,
+                  )
                 )}
               </td>
-              <td />
+              {detail && <td />}
             </tr>
           </tfoot>
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
         Baris disorot = KM di atas rata-rata ({Math.round(avgKm)} km/hari).
+        {!detail && ' Ketuk ▸ di tanggal untuk rincian moda.'}
       </p>
 
       <Button size="lg" className="w-full text-base font-bold" onClick={simpan}>
@@ -671,10 +739,10 @@ function IncomeInputs({
       <Input
         inputMode="numeric"
         autoComplete="off"
-        placeholder="0"
+        placeholder="—"
         value={kotorEdit[tanggal] ?? ''}
         onChange={(e) => setKotorEdit((p) => ({ ...p, [tanggal]: e.target.value }))}
-        className="h-9 w-24 text-right tabular-nums"
+        className="h-9 w-24 text-right tabular-nums placeholder:text-muted-foreground/60"
         aria-label={`Pendapatan ${tanggal}`}
       />
     )
@@ -687,7 +755,7 @@ function IncomeInputs({
           <Input
             inputMode="numeric"
             autoComplete="off"
-            placeholder="0"
+            placeholder="—"
             value={platEdit[tanggal]?.[p] ?? ''}
             onChange={(e) =>
               setPlatEdit((prev) => ({
@@ -695,7 +763,7 @@ function IncomeInputs({
                 [tanggal]: { ...prev[tanggal], [p]: e.target.value },
               }))
             }
-            className="h-8 w-20 text-right tabular-nums"
+            className="h-8 w-20 text-right tabular-nums placeholder:text-muted-foreground/60"
             aria-label={`${PLATFORM_LABEL[p]} ${tanggal}`}
           />
         </div>
@@ -727,12 +795,13 @@ function DayCard({
     <Card className={`py-3 gap-2 ${highlight ? 'border-amber-500/50' : ''}`}>
       <CardContent className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div>
-            <DateCell tanggal={r.tanggal} />
-            <ModeBadges row={r} />
-          </div>
+          <DateCell tanggal={r.tanggal} />
           <span className="text-[11px] text-muted-foreground">{r.keterangan}</span>
         </div>
+        <details className="text-[11px]">
+          <summary className="cursor-pointer text-muted-foreground">Rincian moda</summary>
+          <ModeBadges row={r} />
+        </details>
         <div className={`grid gap-2 ${withIncome ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <div className="space-y-1">
             <Label className="text-[11px] text-muted-foreground">KM motor</Label>
