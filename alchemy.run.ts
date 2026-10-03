@@ -4,9 +4,9 @@
  * Stack: Cloudflare Worker (TanStack Start) + D1 (SQLite) + R2 (foto struk/odo) + KV (sesi).
  *
  * Cara pakai:
- *   npx alchemy plan     # lihat diff
- *   npx alchemy deploy   # apply ke Cloudflare (butuh CLOUDFLARE_API_TOKEN)
- *   npx alchemy destroy  # hapus stack
+ *   pnpm exec alchemy plan     # lihat diff
+ *   pnpm exec alchemy deploy   # apply ke Cloudflare (butuh CLOUDFLARE_API_TOKEN)
+ *   pnpm exec alchemy destroy  # hapus stack
  */
 import * as alchemy from 'alchemy'
 import { Cloudflare } from 'alchemy/cloudflare'

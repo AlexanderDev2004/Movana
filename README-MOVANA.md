@@ -34,15 +34,15 @@ src/routes/
 
 ```bash
 cd Movana
-npm install
-npm run dev      # http://localhost:3000
+pnpm install
+pnpm dev      # http://localhost:3000
 ```
 
 ## Deploy via Alchemy (butuh Cloudflare token)
 
 ```bash
-npx alchemy plan
-npx alchemy deploy
+pnpm exec alchemy plan
+pnpm exec alchemy deploy
 ```
 
 Catatan D1: uang = INTEGER rupiah, hindari float. `drizzle-kit generate` setelah schema final,
