@@ -1,4 +1,4 @@
-import type { DailyKm } from './timeline'
+import type { DailyKm, DayMaps } from './timeline'
 
 export interface TimelineRowInput {
   /** Koreksi KM per tanggal (string input; kosong = pakai KM motor hasil parse) */
@@ -28,6 +28,8 @@ export interface TimelineRow {
   bersih: number
   keterangan: string
   rincian: DailyKm['rincian']
+  /** Info rute harian untuk "Lihat di Maps" (diteruskan dari parse; tanpa koordinat di UI). */
+  maps?: DayMaps
 }
 
 export interface TimelineTotals {
@@ -140,6 +142,7 @@ export function computeTimelineRows(
       bersih,
       keterangan: '',
       rincian: d.rincian,
+      ...(d.maps ? { maps: d.maps } : {}),
     }
     row.keterangan = buildKeterangan(row, input.withIncome)
     return row

@@ -12,7 +12,8 @@ import {
 } from '~/lib/timeline-import'
 import type { TimelineFilter, TimelineRow } from '~/lib/timeline-import'
 import { hashText, parseTimelineJson } from '~/lib/timeline'
-import type { DailyKm } from '~/lib/timeline'
+import type { DailyKm, DayMaps } from '~/lib/timeline'
+import { getDayMapsTarget } from '~/lib/maps'
 import {
   PLATFORM_LABEL,
   isMultiPlatform,
@@ -554,7 +555,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
           <tbody>
             {visible.map((r) => (
               <React.Fragment key={r.tanggal}>
-                <tr className={`border-t ${r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}`}>
+                <tr className={`group border-t ${r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}`}>
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       {!detail && (
@@ -568,8 +569,14 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                         </button>
                       )}
                       <DateCell tanggal={r.tanggal} />
+                      <MapsIconLink maps={r.maps} tanggal={r.tanggal} />
                     </div>
-                    {detail && <ModeBadges row={r} />}
+                    {detail && (
+                      <div className="mt-1 space-y-1">
+                        <ModeBadges row={r} />
+                        <MapsDetailLink maps={r.maps} tanggal={r.tanggal} />
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-1.5 text-right whitespace-nowrap">
                     <KmCell
@@ -626,10 +633,11 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                 {!detail && expanded[r.tanggal] && (
                   <tr className={r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}>
                     <td colSpan={colSpan} className="px-2 py-1.5 bg-muted/40">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         <ModeBadges row={r} />
                         <span className="tabular-nums">Liter {r.liter}</span>
                         <span>{r.keterangan}</span>
+                        <MapsDetailLink maps={r.maps} tanggal={r.tanggal} compact />
                       </div>
                     </td>
                   </tr>
@@ -722,6 +730,76 @@ function DateCell({ tanggal }: { tanggal: string }) {
         {dayShortId(tanggal)}
       </span>
     </div>
+  )
+}
+
+/**
+ * Icon kecil "📍" untuk mode Ringkas: ditaruh di kolom Tanggal.
+ * Selalu mungil (size-5, text-xs) supaya baris tidak tambah tinggi/ramai;
+ * koordinat mentah tidak pernah dirender — hanya dipakai di href.
+ */
+function MapsIconLink({ maps, tanggal }: { maps?: DayMaps; tanggal: string }) {
+  const target = getDayMapsTarget(maps)
+  if (!target) return null
+  return (
+    <a
+      href={target.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Lihat ${tanggal} di Google Maps`}
+      aria-label={`Lihat ${tanggal} di Google Maps`}
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-xs leading-none opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2"
+    >
+      <span aria-hidden>📍</span>
+    </a>
+  )
+}
+
+/**
+ * Tombol jelas "📍 Lihat di Maps" untuk mode Detail / baris yang di-expand.
+ * Label tempat (mis. "Rumah → Area kerja") hanya teks ramah-baca, tanpa koordinat.
+ */
+function MapsDetailLink({
+  maps,
+  tanggal,
+  compact,
+}: {
+  maps?: DayMaps
+  tanggal: string
+  compact?: boolean
+}) {
+  const target = getDayMapsTarget(maps)
+  if (!target) return null
+  return (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <a
+        href={target.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={
+          target.kind === 'route'
+            ? `Buka rute harian ${tanggal} di Google Maps`
+            : `Lihat lokasi ${tanggal} di Google Maps`
+        }
+        aria-label={
+          target.kind === 'route'
+            ? `Lihat rute ${tanggal} di Google Maps`
+            : `Lihat lokasi ${tanggal} di Google Maps`
+        }
+        onClick={(e) => e.stopPropagation()}
+        className={`inline-flex items-center gap-1 rounded-md border font-medium hover:bg-muted ${
+          compact ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-1 text-xs'
+        }`}
+      >
+        <span aria-hidden>📍</span> Lihat di Maps
+      </a>
+      {maps?.placeLabel && (
+        <span className={compact ? 'text-[11px]' : 'text-[11px] text-muted-foreground'}>
+          {maps.placeLabel}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -957,12 +1035,18 @@ function DayCard({
     <Card className={`py-3 gap-2 ${highlight ? 'border-amber-500/50' : ''}`}>
       <CardContent className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <DateCell tanggal={r.tanggal} />
+          <div className="flex items-center gap-1">
+            <DateCell tanggal={r.tanggal} />
+            <MapsIconLink maps={r.maps} tanggal={r.tanggal} />
+          </div>
           <span className="text-[11px] text-muted-foreground">{r.keterangan}</span>
         </div>
         <details className="text-[11px]">
           <summary className="cursor-pointer text-muted-foreground">Rincian moda</summary>
-          <ModeBadges row={r} />
+          <div className="mt-0.5 space-y-1">
+            <ModeBadges row={r} />
+            <MapsDetailLink maps={r.maps} tanggal={r.tanggal} compact />
+          </div>
         </details>
         <div className={`grid gap-2 ${withIncome ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <div className="space-y-1">
