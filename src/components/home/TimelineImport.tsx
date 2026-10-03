@@ -27,6 +27,7 @@ import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { CalcField } from './CalcField'
 import { RpInput, formatRibuan } from './RpInput'
+import { TakeoutGuide } from './TakeoutGuide'
 
 const MAX_FILE_BYTES = 300 * 1024 * 1024
 const MIN_KM_OPTIONS = [0, 10, 15, 20]
@@ -252,16 +253,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
           </p>
         )}
 
-        <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">Cara dapat file JSON-nya</summary>
-          <ol className="mt-1 list-decimal pl-4 space-y-0.5">
-            <li>
-              Buka <b>Google Takeout</b> → pilih <b>Location History (Timeline)</b> → export JSON.
-            </li>
-            <li>Download hasilnya, lalu upload file JSON-nya di sini.</li>
-            <li>File dibaca di HP ini saja, tidak dikirim ke mana pun.</li>
-          </ol>
-        </details>
+        <TakeoutGuide />
       </div>
     )
   }
