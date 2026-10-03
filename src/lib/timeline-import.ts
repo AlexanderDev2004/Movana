@@ -35,6 +35,50 @@ export interface TimelineTotals {
   totalBersih: number
 }
 
+export interface TimelineFilter {
+  /** Tampilkan hanya hari dengan KM final >= nilai ini (0 = semua) */
+  minKm: number
+  /** Hanya Senin–Jumat */
+  weekdaysOnly: boolean
+  /** Hanya hari yang pendapatannya sudah diisi */
+  filledOnly: boolean
+}
+
+export const NO_FILTER: TimelineFilter = { minKm: 0, weekdaysOnly: false, filledOnly: false }
+
+/** 0 = Minggu … 6 = Sabtu. -1 bila tanggal tidak valid */
+export function weekdayOf(tanggal: string): number {
+  const d = new Date(`${tanggal}T00:00:00`)
+  const w = d.getDay()
+  return Number.isFinite(w) ? w : -1
+}
+
+export function isWeekendDay(tanggal: string): boolean {
+  const w = weekdayOf(tanggal)
+  return w === 0 || w === 6
+}
+
+const DAY_SHORT_ID = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+
+export function dayShortId(tanggal: string): string {
+  const w = weekdayOf(tanggal)
+  return w >= 0 ? DAY_SHORT_ID[w] : ''
+}
+
+/** Filter tampilan (tidak mengubah data / hasil simpan). */
+export function filterTimelineRows(
+  rows: TimelineRow[],
+  filter: TimelineFilter,
+  isFilled: (tanggal: string) => boolean,
+): TimelineRow[] {
+  return rows.filter((r) => {
+    if (r.km < filter.minKm) return false
+    if (filter.weekdaysOnly && isWeekendDay(r.tanggal)) return false
+    if (filter.filledOnly && !isFilled(r.tanggal)) return false
+    return true
+  })
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
