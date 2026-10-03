@@ -5,6 +5,8 @@ export interface TimelineRowInput {
   kmEdit: Record<string, string>
   kmPerLiter: number
   hargaBbm: number
+  /** Biaya BBM aktual per tanggal, digit murni (kosong = dihitung dari KM) */
+  bbmEdit?: Record<string, string>
   /** Pendapatan per tanggal (untuk multi-platform: sudah dijumlah per hari) */
   kotorPerTanggal: Record<string, number>
   withIncome: boolean
@@ -19,6 +21,8 @@ export interface TimelineRow {
   edited: boolean
   liter: number
   biayaBbm: number
+  /** true bila biaya BBM diisi manual (bukan dari rumus KM) */
+  bbmEdited: boolean
   pendapatan: number
   /** pendapatan - biayaBbm (negatif = minus; untuk mode tanpa pendapatan abaikan) */
   bersih: number
@@ -86,9 +90,13 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-function buildKeterangan(row: Pick<TimelineRow, 'edited' | 'km' | 'bersih'>, withIncome: boolean): string {
+function buildKeterangan(
+  row: Pick<TimelineRow, 'edited' | 'bbmEdited' | 'km' | 'bersih'>,
+  withIncome: boolean,
+): string {
   const notes: string[] = []
   if (row.edited) notes.push('✏️ koreksi')
+  if (row.bbmEdited) notes.push('⛽ aktual')
   if (row.km === 0) notes.push('tanpa motor')
   if (withIncome && row.bersih < 0) notes.push('⚠️ minus')
   return notes.length > 0 ? notes.join(' • ') : '—'
@@ -111,8 +119,13 @@ export function computeTimelineRows(
     const edited = rawEdit !== ''
     const km = edited ? Math.max(0, Number(rawEdit) || 0) : kmParsed
     const literExact = validKpl && km > 0 ? km / input.kmPerLiter : 0
-    const liter = round2(literExact)
-    const biayaBbm = Math.round(literExact * harga)
+    const rawBbm = (input.bbmEdit?.[d.tanggal] ?? '').trim()
+    const bbmEdited = rawBbm !== ''
+    // BBM aktual (misal struk SPBU) mengalahkan rumus; liter diturunkan balik dari harga.
+    const biayaBbm = bbmEdited
+      ? Math.max(0, Math.round(Number(rawBbm.replace(/[^\d]/g, '')) || 0))
+      : Math.round(literExact * harga)
+    const liter = bbmEdited && harga > 0 ? round2(biayaBbm / harga) : round2(literExact)
     const pendapatan = input.withIncome ? Math.round(Number(input.kotorPerTanggal[d.tanggal]) || 0) : 0
     const bersih = pendapatan - biayaBbm
     const row: TimelineRow = {
@@ -122,6 +135,7 @@ export function computeTimelineRows(
       edited,
       liter,
       biayaBbm,
+      bbmEdited,
       pendapatan,
       bersih,
       keterangan: '',

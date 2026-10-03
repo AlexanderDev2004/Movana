@@ -32,6 +32,8 @@ export interface TimelineImportEntry {
   tanggal: string // YYYY-MM-DD
   km: number
   kotor: number
+  /** Biaya BBM final (hasil rumus atau isi aktual). Opsional untuk kompatibilitas. */
+  biayaBensin?: number
   rincianKm?: Record<TimelineKind, number>
   rincian?: { platform: string; jumlah: number }[]
 }
@@ -61,6 +63,7 @@ export function saveTimelineImport(workspaceId: string, entries: TimelineImportE
         odoAkhir: 0,
         kotor: Math.round(e.kotor),
         totalKm: e.km,
+        biayaBensin: Math.round(e.biayaBensin ?? 0),
         sumber: 'linimasa' as const,
         rincianKm: e.rincianKm,
         rincian: e.rincian,

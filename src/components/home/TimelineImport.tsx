@@ -26,7 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { CalcField } from './CalcField'
-import { RpInput } from './RpInput'
+import { RpInput, formatRibuan } from './RpInput'
 
 const MAX_FILE_BYTES = 300 * 1024 * 1024
 const MIN_KM_OPTIONS = [0, 10, 15, 20]
@@ -48,6 +48,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   const [kmPerLiter, setKmPerLiter] = React.useState('45')
   const [hargaBbm, setHargaBbm] = React.useState('10000')
   const [kmEdit, setKmEdit] = React.useState<Record<string, string>>({})
+  const [bbmEdit, setBbmEdit] = React.useState<Record<string, string>>({})
   const [kotorEdit, setKotorEdit] = React.useState<Record<string, string>>({})
   const [platEdit, setPlatEdit] = React.useState<Record<string, Record<string, string>>>({})
 
@@ -101,6 +102,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
     setError(null)
     setSaved(false)
     setKmEdit({})
+    setBbmEdit({})
     setKotorEdit({})
     setPlatEdit({})
     setExpanded({})
@@ -149,10 +151,11 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         kmEdit,
         kmPerLiter: Number(kmPerLiter),
         hargaBbm: Number(hargaBbm),
+        bbmEdit,
         kotorPerTanggal,
         withIncome,
       }),
-    [days, kmEdit, kmPerLiter, hargaBbm, kotorPerTanggal, withIncome],
+    [days, kmEdit, kmPerLiter, hargaBbm, bbmEdit, kotorPerTanggal, withIncome],
   )
 
   const visible = React.useMemo(() => filterTimelineRows(rows, filter, isFilled), [rows, filter, isFilled])
@@ -199,6 +202,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         tanggal: r.tanggal,
         km: r.km,
         kotor: withIncome ? r.pendapatan : 0,
+        biayaBensin: r.biayaBbm,
         rincianKm: r.rincian,
         rincian:
           multi && withIncome
@@ -511,6 +515,16 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
             kmValue={kmEdit[r.tanggal] ?? ''}
             onKmChange={(v) => setKmEdit((p) => ({ ...p, [r.tanggal]: v }))}
             onResetKm={() => resetKm(r.tanggal)}
+            bbmValue={bbmEdit[r.tanggal] ?? ''}
+            onBbmChange={(digits) => setBbmEdit((p) => ({ ...p, [r.tanggal]: digits }))}
+            onResetBbm={() =>
+              setBbmEdit((p) => {
+                if (!(r.tanggal in p)) return p
+                const next = { ...p }
+                delete next[r.tanggal]
+                return next
+              })
+            }
             incomeSlot={
               <IncomeInputs
                 tanggal={r.tanggal}
@@ -574,7 +588,22 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                     />
                   </td>
                   {detail && <td className="px-2 py-1.5 text-right whitespace-nowrap">{r.liter}</td>}
-                  <td className="px-2 py-1.5 text-right whitespace-nowrap">{formatRp(r.biayaBbm)}</td>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                    <BbmCell
+                      row={r}
+                      value={bbmEdit[r.tanggal] ?? ''}
+                      onChange={(digits) => setBbmEdit((p) => ({ ...p, [r.tanggal]: digits }))}
+                      onReset={() =>
+                        setBbmEdit((p) => {
+                          if (!(r.tanggal in p)) return p
+                          const next = { ...p }
+                          delete next[r.tanggal]
+                          return next
+                        })
+                      }
+                      clickToEdit={!detail}
+                    />
+                  </td>
                   {withIncome && (
                     <td className="px-2 py-1.5 text-right">
                       <IncomeInputs
@@ -654,7 +683,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       </div>
       <p className="text-xs text-muted-foreground">
         Baris disorot = KM di atas rata-rata ({Math.round(avgKm)} km/hari). Ketuk angka KM
-        untuk koreksi (Esc = batal).
+        untuk koreksi dan angka BBM untuk isi aktual SPBU (Esc = batal).
         {!detail && ' Ketuk ▸ di tanggal untuk rincian moda.'}
       </p>
 
@@ -665,8 +694,9 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Rumus per baris</summary>
         <p className="mt-1">
-          Liter = KM / konsumsi; BBM = liter × harga; Bersih = pendapatan − BBM. KM default = motor
-          hasil parse, bisa diketik ulang bila aneh. Filter hanya mengubah tampilan — yang disimpan
+          Liter = KM / konsumsi; BBM = liter × harga; Bersih = pendapatan − BBM. KM default =
+          motor hasil parse, BBM default = hasil rumus — keduanya bisa diketik ulang bila beda
+          dengan struk SPBU (liter menyesuaikan otomatis). Filter hanya mengubah tampilan — yang disimpan
           tetap semua {totals.days} hari.
         </p>
       </details>
@@ -761,6 +791,77 @@ function KmCell({
   )
 }
 
+/**
+ * Sel BBM: tampil biaya (hasil rumus / isi aktual) + ✏️, ketuk → RpInput.
+ * Sama seperti KmCell: ukuran tetap supaya tidak layout shift.
+ */
+function BbmCell({
+  row: r,
+  value,
+  onChange,
+  onReset,
+  clickToEdit,
+  widthClass = 'w-24',
+}: {
+  row: TimelineRow
+  value: string
+  onChange: (digits: string) => void
+  onReset: () => void
+  clickToEdit: boolean
+  widthClass?: string
+}) {
+  const [editing, setEditing] = React.useState(false)
+  const showInput = !clickToEdit || editing
+  const display = value.trim() !== '' ? formatRibuan(value) : formatRp(r.biayaBbm)
+
+  return (
+    <div>
+      <div className="flex items-center justify-end gap-1">
+        {showInput ? (
+          <RpInput
+            autoFocus={clickToEdit}
+            placeholder={String(r.biayaBbm)}
+            value={value}
+            onChange={onChange}
+            onBlur={() => {
+              if (clickToEdit) setEditing(false)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') {
+                onChange('')
+                setEditing(false)
+              }
+            }}
+            className={`h-9 ${widthClass}`}
+            aria-label={`Biaya BBM ${r.tanggal}`}
+          />
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            title="Ketuk untuk isi biaya BBM aktual"
+            className={`h-9 rounded-md border border-transparent hover:border-input hover:bg-muted px-2 text-right tabular-nums ${widthClass}`}
+            aria-label={`Isi BBM aktual ${r.tanggal}, saat ini ${display}`}
+          >
+            {display} <span className="text-xs text-muted-foreground">✏️</span>
+          </button>
+        )}
+        {r.bbmEdited && (
+          <button
+            onClick={onReset}
+            title="Kembali ke hasil rumus"
+            className="text-muted-foreground hover:text-foreground text-base leading-none px-0.5"
+            aria-label={`Reset BBM ${r.tanggal}`}
+          >
+            ↺
+          </button>
+        )}
+      </div>
+      {r.bbmEdited && <div className="text-[11px] text-muted-foreground">aktual SPBU</div>}
+    </div>
+  )
+}
+
 function ModeBadges({ row }: { row: TimelineRow }) {
   const parts: string[] = []
   if (row.rincian.motor > 0) parts.push(`🏍 ${row.rincian.motor}`)
@@ -830,6 +931,9 @@ function DayCard({
   kmValue,
   onKmChange,
   onResetKm,
+  bbmValue,
+  onBbmChange,
+  onResetBbm,
   incomeSlot,
 }: {
   row: TimelineRow
@@ -839,6 +943,9 @@ function DayCard({
   kmValue: string
   onKmChange: (v: string) => void
   onResetKm: () => void
+  bbmValue: string
+  onBbmChange: (digits: string) => void
+  onResetBbm: () => void
   incomeSlot: React.ReactNode
 }) {
   return (
@@ -894,7 +1001,14 @@ function DayCard({
           </div>
           <div>
             <div className="text-[11px] text-muted-foreground">BBM</div>
-            <div className="font-bold tabular-nums text-xs pt-0.5">{formatRp(r.biayaBbm)}</div>
+            <BbmCell
+              row={r}
+              value={bbmValue}
+              onChange={onBbmChange}
+              onReset={onResetBbm}
+              clickToEdit
+              widthClass="w-full"
+            />
           </div>
           <div>
             <div className="text-[11px] text-muted-foreground">{withIncome ? 'Bersih' : 'Keluar'}</div>
