@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { CalcField } from './CalcField'
+import { RpInput } from './RpInput'
 
 const MAX_FILE_BYTES = 300 * 1024 * 1024
 const MIN_KM_OPTIONS = [0, 10, 15, 20]
@@ -433,13 +434,11 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1.5">
                     <Label>Nominal (Rp)</Label>
-                    <Input
-                      inputMode="numeric"
-                      autoComplete="off"
-                      placeholder="cth 200000"
+                    <RpInput
+                      placeholder="cth 200.000"
                       value={bulkAmount}
-                      onChange={(e) => setBulkAmount(e.target.value)}
-                      className="h-10 tabular-nums"
+                      onChange={setBulkAmount}
+                      className="h-10"
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -791,13 +790,11 @@ function IncomeInputs({
 }) {
   if (!multi) {
     return (
-      <Input
-        inputMode="numeric"
-        autoComplete="off"
-        placeholder="—"
+      <RpInput
+        placeholder="0"
         value={kotorEdit[tanggal] ?? ''}
-        onChange={(e) => setKotorEdit((p) => ({ ...p, [tanggal]: e.target.value }))}
-        className="h-9 w-24 text-right tabular-nums placeholder:text-muted-foreground/60"
+        onChange={(digits) => setKotorEdit((p) => ({ ...p, [tanggal]: digits }))}
+        className="h-9 w-28 placeholder:text-muted-foreground/60"
         aria-label={`Pendapatan ${tanggal}`}
       />
     )
@@ -807,18 +804,16 @@ function IncomeInputs({
       {platforms.map((p) => (
         <div key={p} className="flex items-center justify-end gap-1">
           <Label className="text-[11px] text-muted-foreground">{PLATFORM_LABEL[p]}</Label>
-          <Input
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="—"
+          <RpInput
+            placeholder="0"
             value={platEdit[tanggal]?.[p] ?? ''}
-            onChange={(e) =>
+            onChange={(digits) =>
               setPlatEdit((prev) => ({
                 ...prev,
-                [tanggal]: { ...prev[tanggal], [p]: e.target.value },
+                [tanggal]: { ...prev[tanggal], [p]: digits },
               }))
             }
-            className="h-8 w-20 text-right tabular-nums placeholder:text-muted-foreground/60"
+            className="h-8 w-24 placeholder:text-muted-foreground/60"
             aria-label={`${PLATFORM_LABEL[p]} ${tanggal}`}
           />
         </div>
