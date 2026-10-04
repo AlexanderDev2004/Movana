@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useWorkspaces, workspaceIcon } from '~/lib/workspace'
+import { useWorkspaces } from '~/lib/workspace'
 
 export function WorkspaceNav() {
   const { workspaces, active, ready, setActiveId } = useWorkspaces()
@@ -15,7 +15,7 @@ export function WorkspaceNav() {
     >
       {workspaces.map((w) => (
         <option key={w.id} value={w.id}>
-          {workspaceIcon(w)} {w.name}
+          {w.name}
         </option>
       ))}
     </select>

@@ -53,6 +53,10 @@ export interface TimelineImportEntry {
   biayaBensin?: number
   rincianKm?: Record<TimelineKind, number>
   rincian?: { platform: string; jumlah: number }[]
+  /** Total pengeluaran tambahan hari itu (disinkron dari rincianBiaya bila kosong). */
+  biayaLain?: number
+  /** Rincian pengeluaran tambahan per kategori (ikut ke Riwayat). */
+  rincianBiaya?: { kategori: string; jumlah: number }[]
 }
 
 /**
@@ -74,6 +78,20 @@ export function saveTimelineImport(workspaceId: string, entries: TimelineImportE
       }
     }
     for (const e of entries) {
+      const rincianBiaya = Array.isArray(e.rincianBiaya)
+        ? e.rincianBiaya
+            .filter((r) => r && typeof r.kategori === 'string')
+            .map((r) => ({
+              kategori: r.kategori.trim().toLowerCase() || 'lainnya',
+              jumlah: Math.max(0, Math.round(Number(r.jumlah) || 0)),
+            }))
+            .filter((r) => r.jumlah > 0)
+            .slice(0, 20)
+        : undefined
+      const biayaLain =
+        typeof e.biayaLain === 'number' && Number.isFinite(e.biayaLain)
+          ? Math.max(0, Math.round(e.biayaLain))
+          : (rincianBiaya ?? []).reduce((a, r) => a + r.jumlah, 0)
       byDate.set(e.tanggal, {
         tanggal: e.tanggal,
         odoAwal: 0,
@@ -81,9 +99,11 @@ export function saveTimelineImport(workspaceId: string, entries: TimelineImportE
         kotor: Math.round(e.kotor),
         totalKm: e.km,
         biayaBensin: Math.round(e.biayaBensin ?? 0),
+        biayaLain,
         sumber: 'linimasa' as const,
         rincianKm: e.rincianKm,
         rincian: e.rincian,
+        ...(rincianBiaya && rincianBiaya.length > 0 ? { rincianBiaya } : {}),
       })
     }
     const merged = [...byDate.values()].sort((a, b) => {

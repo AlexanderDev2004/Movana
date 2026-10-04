@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Fuel, Gauge, Plus, Wallet } from 'lucide-react'
+import { LuArrowLeft, LuFuel, LuGauge, LuKeyboard, LuMapPinned, LuPlus, LuWallet } from 'react-icons/lu'
 import { formatRp, hitungHarian } from '~/lib/calc'
 import type { Platform } from '~/lib/calc'
 import type { Workspace } from '~/lib/workspace'
@@ -116,7 +116,7 @@ export function Calculator({
     <div className="max-w-xl mx-auto p-4 pb-28 space-y-4">
       <header className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={onBack}>
-          <ArrowLeft aria-hidden /> Semua
+          <LuArrowLeft aria-hidden /> Semua
         </Button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -140,16 +140,16 @@ export function Calculator({
           </select>
         )}
         <Button variant="outline" size="sm" onClick={onCreate} title="Buat workspace baru">
-          <Plus aria-hidden /> Baru
+          <LuPlus aria-hidden /> Baru
         </Button>
       </header>
 
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1" role="tablist" aria-label="Mode hitung">
         <Button variant={mode === 'odo' ? 'default' : 'ghost'} onClick={() => setMode('odo')} role="tab" aria-selected={mode === 'odo'}>
-          ⌨️ Odo manual
+          <LuKeyboard aria-hidden /> Odo manual
         </Button>
         <Button variant={mode === 'timeline' ? 'default' : 'ghost'} onClick={() => setMode('timeline')} role="tab" aria-selected={mode === 'timeline'}>
-          📍 Import Timeline
+          <LuMapPinned aria-hidden /> Import Timeline
         </Button>
       </div>
 
@@ -162,7 +162,7 @@ export function Calculator({
         <CardHeader>
           <SectionTitle
             step="1"
-            icon={<Gauge className="size-4" aria-hidden />}
+            icon={<LuGauge className="size-4" aria-hidden />}
             title="Odometer hari ini"
             right={kmPreview !== null ? <Badge variant="secondary">{kmPreview} km</Badge> : null}
           />
@@ -185,7 +185,7 @@ export function Calculator({
 
       <Card>
         <CardHeader>
-          <SectionTitle step="2" icon={<Fuel className="size-4" aria-hidden />} title="Bensin & biaya" />
+          <SectionTitle step="2" icon={<LuFuel className="size-4" aria-hidden />} title="Bensin & biaya" />
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-3">
@@ -200,7 +200,7 @@ export function Calculator({
           <CardHeader>
             <SectionTitle
               step="3"
-              icon={<Wallet className="size-4" aria-hidden />}
+              icon={<LuWallet className="size-4" aria-hidden />}
               title={incomeLabel}
               right={multi ? <Badge variant="secondary">{formatRp(totalKotorMulti)}</Badge> : null}
             />

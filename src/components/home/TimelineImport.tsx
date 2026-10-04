@@ -1,16 +1,26 @@
 import * as React from 'react'
 import { Link } from '@tanstack/react-router'
-import { FileJson, Upload } from 'lucide-react'
+import { LuBike, LuCar, LuChevronDown, LuChevronRight, LuClock, LuFileJson, LuFootprints, LuMapPin, LuPencil, LuPlus, LuRotateCcw, LuTriangleAlert, LuUpload, LuZap } from 'react-icons/lu'
 import { formatRp } from '~/lib/calc'
 import type { Platform } from '~/lib/calc'
 import { saveTimelineImport } from '~/lib/daily-log'
 import {
+  DATE_PRESETS,
+  DEFAULT_FILTER,
   computeTimelineRows,
+  dateBounds,
   dayShortId,
   filterTimelineRows,
+  isFilterNarrow,
   isWeekendDay,
+  loadTimelineFilter,
+  resolveJamRange,
+  saveTimelineFilter,
+  todayLocal,
 } from '~/lib/timeline-import'
 import type { TimelineFilter, TimelineRow } from '~/lib/timeline-import'
+import { normalizeExpenses, totalExtra } from '~/lib/extra-expense'
+import type { ExtraExpense } from '~/lib/extra-expense'
 import { hashText, parseTimelineJson } from '~/lib/timeline'
 import type { DailyKm, DayMaps } from '~/lib/timeline'
 import { getDayMapsTarget } from '~/lib/maps'
@@ -28,6 +38,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { CalcField } from './CalcField'
+import { ExtraExpenseEditor } from './ExtraExpenseEditor'
 import { RpInput, formatRibuan } from './RpInput'
 import { TakeoutGuide } from './TakeoutGuide'
 
@@ -57,11 +68,13 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
 
   const [view, setView] = React.useState<'ringkas' | 'detail'>('ringkas')
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
-  const [filter, setFilter] = React.useState<TimelineFilter>({
+  const [filter, setFilter] = React.useState<TimelineFilter>(() => ({
+    ...DEFAULT_FILTER,
     minKm: DEFAULT_MIN_KM,
-    weekdaysOnly: false,
-    filledOnly: false,
-  })
+  }))
+  const [filterLoaded, setFilterLoaded] = React.useState(false)
+  const [extraEdit, setExtraEdit] = React.useState<Record<string, ExtraExpense[]>>({})
+  const [showJam, setShowJam] = React.useState(false)
   const [showBulk, setShowBulk] = React.useState(false)
   const [bulkAmount, setBulkAmount] = React.useState('')
   const [bulkTarget, setBulkTarget] = React.useState<'visible' | 'big' | 'empty'>('empty')
@@ -109,10 +122,28 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
     setKotorEdit({})
     setPlatEdit({})
     setExpanded({})
-    setFilter({ minKm: DEFAULT_MIN_KM, weekdaysOnly: false, filledOnly: false })
+    setExtraEdit({})
+    setFilter({ ...DEFAULT_FILTER, minKm: DEFAULT_MIN_KM })
+    setShowJam(false)
     setShowBulk(false)
     setBulkAmount('')
   }
+
+  // Muat preferensi filter terakhir per workspace; simpan tiap berubah.
+  React.useEffect(() => {
+    const savedFilter = loadTimelineFilter(ws.id)
+    if (savedFilter) {
+      setFilter(savedFilter)
+      if (savedFilter.jamMode !== 'all') setShowJam(true)
+    }
+    setFilterLoaded(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ws.id])
+
+  React.useEffect(() => {
+    if (!filterLoaded) return
+    saveTimelineFilter(ws.id, filter)
+  }, [ws.id, filter, filterLoaded])
 
   const resetKm = (tanggal: string) =>
     setKmEdit((p) => {
@@ -148,6 +179,25 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
     return m
   }, [days, multi, ws.platforms, kotorEdit, platEdit])
 
+  const extraPerTanggal = React.useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const [tanggal, list] of Object.entries(extraEdit)) {
+      const t = totalExtra(normalizeExpenses(list))
+      if (t > 0) m[tanggal] = t
+    }
+    return m
+  }, [extraEdit])
+
+  const extraCountPerTanggal = React.useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const [tanggal, list] of Object.entries(extraEdit)) {
+      if (list.length > 0) m[tanggal] = list.length
+    }
+    return m
+  }, [extraEdit])
+
+  const jamRange = React.useMemo(() => resolveJamRange(filter), [filter])
+
   const { rows, totals } = React.useMemo(
     () =>
       computeTimelineRows(days ?? [], {
@@ -157,16 +207,21 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         bbmEdit,
         kotorPerTanggal,
         withIncome,
+        extraPerTanggal,
+        extraCountPerTanggal,
+        jamRange,
       }),
-    [days, kmEdit, kmPerLiter, hargaBbm, bbmEdit, kotorPerTanggal, withIncome],
+    [days, kmEdit, kmPerLiter, hargaBbm, bbmEdit, kotorPerTanggal, withIncome, extraPerTanggal, extraCountPerTanggal, jamRange],
   )
 
-  const visible = React.useMemo(() => filterTimelineRows(rows, filter, isFilled), [rows, filter, isFilled])
+  const todayStr = React.useMemo(() => todayLocal(), [])
+  const dateBoundsActive = React.useMemo(() => dateBounds(filter, todayStr), [filter, todayStr])
+  const visible = React.useMemo(
+    () => filterTimelineRows(rows, filter, isFilled, todayStr),
+    [rows, filter, isFilled, todayStr],
+  )
 
   const avgKm = totals.days > 0 ? totals.totalKm / totals.days : 0
-  const filledRows = withIncome ? rows.filter((r) => isFilled(r.tanggal)) : []
-  const bersihFilled = filledRows.reduce((a, r) => a + r.bersih, 0)
-  const masukFilled = filledRows.reduce((a, r) => a + r.pendapatan, 0)
   const visibleFilled = withIncome ? visible.filter((r) => isFilled(r.tanggal)) : []
 
   const kplNum = Number(kmPerLiter)
@@ -201,17 +256,24 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   const simpan = () => {
     const n = saveTimelineImport(
       ws.id,
-      rows.map((r) => ({
-        tanggal: r.tanggal,
-        km: r.km,
-        kotor: withIncome ? r.pendapatan : 0,
-        biayaBensin: r.biayaBbm,
-        rincianKm: r.rincian,
-        rincian:
-          multi && withIncome
-            ? ws.platforms.map((p) => ({ platform: p, jumlah: Number(platEdit[r.tanggal]?.[p]) || 0 }))
-            : undefined,
-      })),
+      rows.map((r) => {
+        const extras = normalizeExpenses(extraEdit[r.tanggal] ?? [])
+        return {
+          tanggal: r.tanggal,
+          km: r.km,
+          kotor: withIncome ? r.pendapatan : 0,
+          biayaBensin: r.biayaBbm,
+          biayaLain: r.extra,
+          rincianKm: r.rincian,
+          rincian:
+            multi && withIncome
+              ? ws.platforms.map((p) => ({ platform: p, jumlah: Number(platEdit[r.tanggal]?.[p]) || 0 }))
+              : undefined,
+          ...(extras.length > 0
+            ? { rincianBiaya: extras.map((e) => ({ kategori: e.kategori, jumlah: e.jumlah })) }
+            : {}),
+        }
+      }),
     )
     if (n > 0) {
       if (fileHash) {
@@ -228,7 +290,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       <div className="space-y-3">
         <Card className="border-dashed">
           <CardContent className="space-y-3 text-center py-6">
-            <Upload className="size-8 mx-auto text-muted-foreground" aria-hidden />
+            <LuUpload className="size-8 mx-auto text-muted-foreground" aria-hidden />
             <div>
               <p className="font-bold">Import dari Timeline Google</p>
               <p className="text-sm text-muted-foreground">
@@ -264,13 +326,17 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   const detail = view === 'detail'
   const footPendapatan = visible.reduce((a, r) => a + r.pendapatan, 0)
   const footBiaya = visible.reduce((a, r) => a + r.biayaBbm, 0)
-  const colSpan = (detail ? 7 : 5) - (withIncome ? 0 : 1)
+  const footExtra = visible.reduce((a, r) => a + r.extra, 0)
+  const footBersihVisible = visible.reduce((a, r) => a + r.bersih, 0)
+  const footKeluarVisible = footBiaya + footExtra
+  const narrow = isFilterNarrow(filter)
+  const colSpan = (detail ? 8 : 6) - (withIncome ? 0 : 1)
 
   return (
     <div className="space-y-4">
       <Card className="py-3">
         <CardContent className="flex items-center gap-2 text-sm">
-          <FileJson className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <LuFileJson className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <span className="min-w-0 flex-1 truncate font-medium">{fileName}</span>
           <Badge variant="secondary">{totals.days} hari</Badge>
           {duplicate && <Badge variant="outline">pernah diimport</Badge>}
@@ -311,8 +377,9 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
             <CalcField label="Harga BBM" value={hargaBbm} onChange={setHargaBbm} suffix="Rp" />
           </div>
           {kplWarn ? (
-            <p className="rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs p-2">
-              ⚠️ Tidak biasa untuk motor (normal 35–50 km/L). Cek lagi angkanya.
+            <p className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs p-2">
+              <LuTriangleAlert className="size-4 shrink-0" aria-hidden />
+              <span>Tidak biasa untuk motor (normal 35–50 km/L). Cek lagi angkanya.</span>
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">Berlaku ke semua {totals.days} hari.</p>
@@ -320,23 +387,83 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         </CardContent>
       </Card>
 
-      {/* Filter cepat */}
+      {/* Filter: tanggal + KM + jam */}
       <Card className="py-3">
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-bold">
               Menampilkan {visible.length} dari {totals.days} hari
             </p>
-            {(filter.minKm !== 0 || filter.weekdaysOnly || filter.filledOnly) && (
+            {narrow && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setFilter({ minKm: 0, weekdaysOnly: false, filledOnly: false })}
+                onClick={() =>
+                  setFilter((f) => ({
+                    ...f,
+                    minKm: 0,
+                    weekdaysOnly: false,
+                    filledOnly: false,
+                    preset: 'all',
+                    dari: '',
+                    sampai: '',
+                    jamMode: 'all',
+                  }))
+                }
               >
                 Tampilkan semua
               </Button>
             )}
           </div>
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Rentang tanggal">
+            {DATE_PRESETS.map((p) => (
+              <Button
+                key={p.id}
+                size="sm"
+                variant={filter.preset === p.id ? 'default' : 'outline'}
+                onClick={() => setFilter((f) => ({ ...f, preset: p.id }))}
+                role="tab"
+                aria-selected={filter.preset === p.id}
+              >
+                {p.label}
+              </Button>
+            ))}
+          </div>
+          {filter.preset === 'custom' ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="tl-dari" className="text-xs">
+                  Dari
+                </Label>
+                <Input
+                  id="tl-dari"
+                  type="date"
+                  value={filter.dari}
+                  onChange={(e) => setFilter((f) => ({ ...f, dari: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="tl-sampai" className="text-xs">
+                  Sampai
+                </Label>
+                <Input
+                  id="tl-sampai"
+                  type="date"
+                  value={filter.sampai}
+                  onChange={(e) => setFilter((f) => ({ ...f, sampai: e.target.value }))}
+                />
+              </div>
+            </div>
+          ) : (
+            dateBoundsActive && (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {formatDate(dateBoundsActive.dari)}
+                {dateBoundsActive.dari !== dateBoundsActive.sampai
+                  ? ` – ${formatDate(dateBoundsActive.sampai)}`
+                  : ''}
+              </p>
+            )
+          )}
           <div className="flex flex-wrap gap-1.5">
             {MIN_KM_OPTIONS.map((v) => (
               <Button
@@ -368,6 +495,82 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
               </Button>
             )}
           </div>
+          <div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowJam((v) => !v)}
+              aria-expanded={showJam}
+              className="px-1 text-xs text-muted-foreground"
+            >
+              {showJam ? <LuChevronDown className="size-3.5" aria-hidden /> : <LuChevronRight className="size-3.5" aria-hidden />}{' '}
+              <LuClock className="size-3.5" aria-hidden /> Filter jam
+              {filter.jamMode !== 'all' && (
+                <span className="ml-1 font-bold text-foreground tabular-nums">
+                  {filter.jamMulai}–{filter.jamSelesai}
+                </span>
+              )}
+            </Button>
+            {showJam && (
+              <div className="mt-1 space-y-1.5 rounded-lg bg-muted/60 p-2">
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant={filter.jamMode === 'all' ? 'default' : 'outline'}
+                    onClick={() => setFilter((f) => ({ ...f, jamMode: 'all' }))}
+                    aria-pressed={filter.jamMode === 'all'}
+                  >
+                    Semua waktu
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={filter.jamMode === 'kerja' ? 'default' : 'outline'}
+                    onClick={() => setFilter((f) => ({ ...f, jamMode: 'kerja' }))}
+                    aria-pressed={filter.jamMode === 'kerja'}
+                  >
+                    Jam kerja
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={filter.jamMode === 'custom' ? 'default' : 'outline'}
+                    onClick={() => setFilter((f) => ({ ...f, jamMode: 'custom' }))}
+                    aria-pressed={filter.jamMode === 'custom'}
+                  >
+                    Custom
+                  </Button>
+                </div>
+                {filter.jamMode !== 'all' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="tl-jam-mulai" className="text-xs">
+                        Jam mulai
+                      </Label>
+                      <Input
+                        id="tl-jam-mulai"
+                        type="time"
+                        value={filter.jamMulai}
+                        onChange={(e) => setFilter((f) => ({ ...f, jamMulai: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="tl-jam-selesai" className="text-xs">
+                        Jam selesai
+                      </Label>
+                      <Input
+                        id="tl-jam-selesai"
+                        type="time"
+                        value={filter.jamSelesai}
+                        onChange={(e) => setFilter((f) => ({ ...f, jamSelesai: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Hanya KM motor di jam tersebut yang dihitung. Koreksi KM manual tidak difilter.
+                </p>
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1" role="tablist" aria-label="Mode tampilan tabel">
             <Button
               size="sm"
@@ -391,31 +594,38 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         </CardContent>
       </Card>
 
-      {/* Kartu total */}
+      {/* Kartu total (mengikuti filter tampil) */}
       <Card className="py-3">
         <CardContent className="space-y-1">
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-sm text-muted-foreground">
-              {withIncome ? `Bersih · ${filledRows.length} hari terisi` : 'Keluar (BBM)'}
+              {withIncome ? `Bersih tampil · ${visibleFilled.length} hari terisi` : 'Keluar tampil (BBM + extra)'}
             </p>
             <Badge variant="secondary">rata-rata {Math.round(avgKm)} km/hari</Badge>
           </div>
           <p
             className={`text-3xl font-bold tabular-nums tracking-tight ${
-              withIncome && filledRows.length === 0 ? 'text-muted-foreground' : ''
+              withIncome && visibleFilled.length === 0 ? 'text-muted-foreground' : ''
             }`}
           >
             {withIncome
-              ? filledRows.length > 0
-                ? formatRp(bersihFilled)
+              ? visibleFilled.length > 0
+                ? formatRp(visibleFilled.reduce((a, r) => a + r.bersih, 0))
                 : 'belum ada pendapatan'
-              : formatRp(totals.totalBiaya)}
+              : formatRp(footKeluarVisible)}
           </p>
-          {withIncome && (
+          {withIncome ? (
             <p className="text-xs text-muted-foreground tabular-nums">
-              Masuk {formatRp(masukFilled)} ({filledRows.length} hari) • BBM semua {totals.days} hari{' '}
-              {formatRp(totals.totalBiaya)}
+              Masuk {formatRp(visibleFilled.reduce((a, r) => a + r.pendapatan, 0))} (
+              {visibleFilled.length} hari) • BBM {formatRp(footBiaya)}
+              {footExtra > 0 && <> • Extra {formatRp(footExtra)}</>}
             </p>
+          ) : (
+            footExtra > 0 && (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                BBM {formatRp(footBiaya)} • Extra {formatRp(footExtra)}
+              </p>
+            )
           )}
         </CardContent>
       </Card>
@@ -424,7 +634,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         <div>
           {!showBulk ? (
             <Button variant="outline" size="sm" onClick={() => setShowBulk(true)}>
-              ⚡ Isi pendapatan massal
+              <LuZap aria-hidden /> Isi pendapatan massal
             </Button>
           ) : (
             <Card className="py-3 bg-muted border-0 shadow-none">
@@ -519,6 +729,8 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                 return next
               })
             }
+            extras={extraEdit[r.tanggal] ?? []}
+            onExtrasChange={(next) => setExtraEdit((p) => ({ ...p, [r.tanggal]: next }))}
             incomeSlot={
               <IncomeInputs
                 tanggal={r.tanggal}
@@ -537,7 +749,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       {/* Tampilan tabel (layar ≥ md) */}
       <div className="hidden md:block overflow-x-auto rounded-xl border">
         <table
-          className={`w-full text-sm tabular-nums ${detail ? 'min-w-[720px]' : 'min-w-[560px]'}`}
+          className={`w-full text-sm tabular-nums ${detail ? 'min-w-[800px]' : 'min-w-[640px]'}`}
         >
           <thead>
             <tr className="bg-muted text-left text-xs text-muted-foreground">
@@ -546,6 +758,9 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
               {detail && <th className="px-2 py-2 font-medium text-right">Liter</th>}
               <th className="px-2 py-2 font-medium text-right" title="Biaya BBM">
                 BBM
+              </th>
+              <th className="px-2 py-2 font-medium text-right" title="Pengeluaran tambahan">
+                Extra
               </th>
               {withIncome && <th className="px-2 py-2 font-medium text-right">Pendapatan</th>}
               <th className="px-2 py-2 font-medium text-right whitespace-nowrap">{hasilLabel}</th>
@@ -558,22 +773,28 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                 <tr className={`group border-t ${r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}`}>
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <div className="flex items-center gap-1">
-                      {!detail && (
-                        <button
-                          onClick={() => toggleExpand(r.tanggal)}
-                          className="text-muted-foreground hover:text-foreground text-sm leading-none w-4"
-                          aria-expanded={!!expanded[r.tanggal]}
-                          aria-label={expanded[r.tanggal] ? `Tutup rincian ${r.tanggal}` : `Buka rincian ${r.tanggal}`}
-                        >
-                          {expanded[r.tanggal] ? '▾' : '▸'}
-                        </button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground"
+                        onClick={() => toggleExpand(r.tanggal)}
+                        aria-expanded={!!expanded[r.tanggal]}
+                        aria-label={expanded[r.tanggal] ? `Tutup rincian ${r.tanggal}` : `Buka rincian ${r.tanggal}`}
+                      >
+                        {expanded[r.tanggal] ? <LuChevronDown className="size-4" aria-hidden /> : <LuChevronRight className="size-4" aria-hidden />}
+                      </Button>
                       <DateCell tanggal={r.tanggal} />
                       <MapsIconLink maps={r.maps} tanggal={r.tanggal} />
                     </div>
                     {detail && (
                       <div className="mt-1 space-y-1">
                         <ModeBadges row={r} />
+                        {r.jamFiltered && (
+                          <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
+                            <LuClock className="size-3" aria-hidden />
+                            {r.km} km di jam filter (penuh {r.kmParsed} km)
+                          </div>
+                        )}
                         <MapsDetailLink maps={r.maps} tanggal={r.tanggal} />
                       </div>
                     )}
@@ -604,6 +825,13 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                       clickToEdit={!detail}
                     />
                   </td>
+                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                    <ExtraCell
+                      row={r}
+                      expanded={!!expanded[r.tanggal]}
+                      onToggle={() => toggleExpand(r.tanggal)}
+                    />
+                  </td>
                   {withIncome && (
                     <td className="px-2 py-1.5 text-right">
                       <IncomeInputs
@@ -621,7 +849,9 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                     {withIncome && !isFilled(r.tanggal) ? (
                       <span className="text-muted-foreground font-normal text-xs">belum diisi</span>
                     ) : (
-                      <span className="font-bold">{formatRp(withIncome ? r.bersih : r.biayaBbm)}</span>
+                      <span className="font-bold">
+                        {formatRp(withIncome ? r.bersih : r.biayaBbm + r.extra)}
+                      </span>
                     )}
                   </td>
                   {detail && (
@@ -630,14 +860,23 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                     </td>
                   )}
                 </tr>
-                {!detail && expanded[r.tanggal] && (
+                {expanded[r.tanggal] && (
                   <tr className={r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}>
                     <td colSpan={colSpan} className="px-2 py-1.5 bg-muted/40">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <ModeBadges row={r} />
-                        <span className="tabular-nums">Liter {r.liter}</span>
-                        <span>{r.keterangan}</span>
-                        <MapsDetailLink maps={r.maps} tanggal={r.tanggal} compact />
+                      <div className="space-y-1.5">
+                        {!detail && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <ModeBadges row={r} />
+                            <span className="tabular-nums">Liter {r.liter}</span>
+                            <span>{r.keterangan}</span>
+                            <MapsDetailLink maps={r.maps} tanggal={r.tanggal} compact />
+                          </div>
+                        )}
+                        <ExtraExpenseEditor
+                          tanggal={r.tanggal}
+                          value={extraEdit[r.tanggal] ?? []}
+                          onChange={(next) => setExtraEdit((p) => ({ ...p, [r.tanggal]: next }))}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -657,6 +896,13 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                 </td>
               )}
               <td className="px-2 py-2 text-right whitespace-nowrap">{formatRp(footBiaya)}</td>
+              <td className="px-2 py-2 text-right whitespace-nowrap">
+                {footExtra === 0 ? (
+                  <span className="text-muted-foreground font-normal">—</span>
+                ) : (
+                  formatRp(footExtra)
+                )}
+              </td>
               {withIncome && (
                 <td className="px-2 py-2 text-right whitespace-nowrap">
                   {footPendapatan === 0 ? (
@@ -670,11 +916,7 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
                 {withIncome && visibleFilled.length === 0 ? (
                   <span className="text-muted-foreground font-normal">—</span>
                 ) : (
-                  formatRp(
-                    withIncome
-                      ? visible.reduce((a, r) => a + r.bersih, 0)
-                      : footBiaya,
-                  )
+                  formatRp(withIncome ? footBersihVisible : footKeluarVisible)
                 )}
               </td>
               {detail && <td />}
@@ -684,8 +926,8 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       </div>
       <p className="text-xs text-muted-foreground">
         Baris disorot = KM di atas rata-rata ({Math.round(avgKm)} km/hari). Ketuk angka KM
-        untuk koreksi dan angka BBM untuk isi aktual SPBU (Esc = batal).
-        {!detail && ' Ketuk ▸ di tanggal untuk rincian moda.'}
+        untuk koreksi dan angka BBM untuk isi aktual SPBU (Esc = batal). Ketuk panah di tanggal
+        atau nominal Extra untuk rincian & kelola pengeluaran.
       </p>
 
       <Button size="lg" className="w-full text-base font-bold" onClick={simpan}>
@@ -707,8 +949,8 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Rumus per baris</summary>
         <p className="mt-1">
-          Liter = KM / konsumsi; BBM = liter × harga; Bersih = pendapatan − BBM. KM default =
-          motor hasil parse, BBM default = hasil rumus — keduanya bisa diketik ulang bila beda
+          Liter = KM / konsumsi; BBM = liter × harga; Bersih = pendapatan − BBM − extra. KM default =
+          motor hasil parse (dibatasi jam bila filter jam aktif), BBM default = hasil rumus — keduanya bisa diketik ulang bila beda
           dengan struk SPBU (liter menyesuaikan otomatis). Filter hanya mengubah tampilan — yang disimpan
           tetap semua {totals.days} hari.
         </p>
@@ -717,8 +959,45 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   )
 }
 
-function DateCell({ tanggal }: { tanggal: string }) {
-  const weekend = isWeekendDay(tanggal)
+/**
+ * Sel Extra mode Ringkas: hanya total (Rp 35.000 / —). Ketuk untuk expand
+ * ke rincian + editor. Tetap satu baris agar tabel tidak ramai.
+ */
+function ExtraCell({ row: r, expanded, onToggle }: { row: TimelineRow; expanded: boolean; onToggle: () => void }) {
+  if (r.extra <= 0) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onToggle}
+        title={`Tambah pengeluaran ${r.tanggal}`}
+        aria-expanded={expanded}
+        aria-label={`Tambah pengeluaran ${r.tanggal}`}
+        className="h-7 border-dashed text-xs font-normal text-muted-foreground"
+      >
+        <LuPlus aria-hidden /> {expanded ? 'tutup' : 'tambah'}
+      </Button>
+    )
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={onToggle}
+      title="Lihat rincian & kelola"
+      aria-expanded={expanded}
+      aria-label={`Kelola pengeluaran ${r.tanggal}, total ${formatRp(r.extra)}`}
+      className="h-7 text-xs tabular-nums"
+    >
+      <LuPlus aria-hidden /> {formatRp(r.extra)}
+      <span className="font-normal text-muted-foreground">
+        {r.extraCount > 1 ? `(${r.extraCount})` : ''} {expanded ? <LuChevronDown className="size-3" aria-hidden /> : <LuChevronRight className="size-3" aria-hidden />}
+      </span>
+    </Button>
+  )
+}
+
+function DateCell({ tanggal }: { tanggal: string }) {  const weekend = isWeekendDay(tanggal)
   return (
     <div className="flex items-center gap-1.5">
       <span className="font-medium">{formatDate(tanggal)}</span>
@@ -734,8 +1013,8 @@ function DateCell({ tanggal }: { tanggal: string }) {
 }
 
 /**
- * Icon kecil "📍" untuk mode Ringkas: ditaruh di kolom Tanggal.
- * Selalu mungil (size-5, text-xs) supaya baris tidak tambah tinggi/ramai;
+ * Ikon kecil pin untuk mode Ringkas: ditaruh di kolom Tanggal.
+ * Selalu mungil (size-5) supaya baris tidak tambah tinggi/ramai;
  * koordinat mentah tidak pernah dirender — hanya dipakai di href.
  */
 function MapsIconLink({ maps, tanggal }: { maps?: DayMaps; tanggal: string }) {
@@ -749,15 +1028,15 @@ function MapsIconLink({ maps, tanggal }: { maps?: DayMaps; tanggal: string }) {
       title={`Lihat ${tanggal} di Google Maps`}
       aria-label={`Lihat ${tanggal} di Google Maps`}
       onClick={(e) => e.stopPropagation()}
-      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-xs leading-none opacity-60 hover:bg-muted hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2"
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2"
     >
-      <span aria-hidden>📍</span>
+      <LuMapPin className="size-3.5" aria-hidden />
     </a>
   )
 }
 
 /**
- * Tombol jelas "📍 Lihat di Maps" untuk mode Detail / baris yang di-expand.
+ * Tombol jelas "Lihat di Maps" untuk mode Detail / baris yang di-expand.
  * Label tempat (mis. "Rumah → Area kerja") hanya teks ramah-baca, tanpa koordinat.
  */
 function MapsDetailLink({
@@ -792,7 +1071,7 @@ function MapsDetailLink({
           compact ? 'px-1.5 py-0.5 text-[11px]' : 'px-2 py-1 text-xs'
         }`}
       >
-        <span aria-hidden>📍</span> Lihat di Maps
+        <LuMapPin className="size-3.5" aria-hidden /> Lihat di Maps
       </a>
       {maps?.placeLabel && (
         <span className={compact ? 'text-[11px]' : 'text-[11px] text-muted-foreground'}>
@@ -804,7 +1083,7 @@ function MapsDetailLink({
 }
 
 /**
- * Sel KM: angka statis + ✏️ (klik → jadi input) di mode Ringkas,
+ * Sel KM: angka statis + ikon edit (klik → jadi input) di mode Ringkas,
  * input langsung di mode Detail. Ukuran sama (h-9 w-20) supaya tidak layout shift.
  */
 function KmCell({
@@ -852,21 +1131,23 @@ function KmCell({
           <button
             onClick={() => setEditing(true)}
             title="Ketuk untuk koreksi KM"
-            className="h-9 w-20 rounded-md border border-transparent hover:border-input hover:bg-muted px-2 text-right tabular-nums"
+            className="flex h-9 w-20 items-center justify-end gap-1 rounded-md border border-transparent hover:border-input hover:bg-muted px-2 text-right tabular-nums"
             aria-label={`Koreksi KM ${r.tanggal}, saat ini ${display} km`}
           >
-            {display} <span className="text-xs text-muted-foreground">✏️</span>
+            {display} <LuPencil className="size-3 shrink-0 text-muted-foreground" aria-hidden />
           </button>
         )}
         {r.edited && (
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-muted-foreground"
             onClick={onReset}
             title={`Kembalikan ke ${r.kmParsed} km`}
-            className="text-muted-foreground hover:text-foreground text-base leading-none px-0.5"
             aria-label={`Reset KM ${r.tanggal}`}
           >
-            ↺
-          </button>
+            <LuRotateCcw className="size-3.5" aria-hidden />
+          </Button>
         )}
       </div>
       {r.edited && <div className="text-[11px] text-muted-foreground">asli {r.kmParsed}</div>}
@@ -875,7 +1156,7 @@ function KmCell({
 }
 
 /**
- * Sel BBM: tampil biaya (hasil rumus / isi aktual) + ✏️, ketuk → RpInput.
+ * Sel BBM: tampil biaya (hasil rumus / isi aktual) + ikon edit, ketuk → RpInput.
  * Sama seperti KmCell: ukuran tetap supaya tidak layout shift.
  */
 function BbmCell({
@@ -923,21 +1204,23 @@ function BbmCell({
           <button
             onClick={() => setEditing(true)}
             title="Ketuk untuk isi biaya BBM aktual"
-            className={`h-9 rounded-md border border-transparent hover:border-input hover:bg-muted px-2 text-right tabular-nums ${widthClass}`}
+            className={`flex h-9 items-center justify-end gap-1 rounded-md border border-transparent hover:border-input hover:bg-muted px-2 text-right tabular-nums ${widthClass}`}
             aria-label={`Isi BBM aktual ${r.tanggal}, saat ini ${display}`}
           >
-            {display} <span className="text-xs text-muted-foreground">✏️</span>
+            {display} <LuPencil className="size-3 shrink-0 text-muted-foreground" aria-hidden />
           </button>
         )}
         {r.bbmEdited && (
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-muted-foreground"
             onClick={onReset}
             title="Kembali ke hasil rumus"
-            className="text-muted-foreground hover:text-foreground text-base leading-none px-0.5"
             aria-label={`Reset BBM ${r.tanggal}`}
           >
-            ↺
-          </button>
+            <LuRotateCcw className="size-3.5" aria-hidden />
+          </Button>
         )}
       </div>
       {r.bbmEdited && <div className="text-[11px] text-muted-foreground">aktual SPBU</div>}
@@ -946,13 +1229,25 @@ function BbmCell({
 }
 
 function ModeBadges({ row }: { row: TimelineRow }) {
-  const parts: string[] = []
-  if (row.rincian.motor > 0) parts.push(`🏍 ${row.rincian.motor}`)
-  if (row.rincian.mobil > 0) parts.push(`🚗 ${row.rincian.mobil}`)
-  if (row.rincian.jalan > 0) parts.push(`🚶 ${row.rincian.jalan}`)
-  if (row.rincian.lain > 0) parts.push(`➕ ${row.rincian.lain}`)
+  const parts: { icon: React.ReactNode; value: number }[] = []
+  if (row.rincian.motor > 0)
+    parts.push({ icon: <LuBike className="size-3" aria-hidden />, value: row.rincian.motor })
+  if (row.rincian.mobil > 0)
+    parts.push({ icon: <LuCar className="size-3" aria-hidden />, value: row.rincian.mobil })
+  if (row.rincian.jalan > 0)
+    parts.push({ icon: <LuFootprints className="size-3" aria-hidden />, value: row.rincian.jalan })
+  if (row.rincian.lain > 0)
+    parts.push({ icon: <LuPlus className="size-3" aria-hidden />, value: row.rincian.lain })
   if (parts.length === 0) return <div className="text-[11px] text-muted-foreground">tanpa pergerakan</div>
-  return <div className="text-[11px] text-muted-foreground tabular-nums">{parts.join(' • ')}</div>
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
+      {parts.map((p, i) => (
+        <span key={i} className="inline-flex items-center gap-1">
+          {p.icon} {p.value}
+        </span>
+      ))}
+    </div>
+  )
 }
 
 function IncomeInputs({
@@ -1018,6 +1313,8 @@ function DayCard({
   onBbmChange,
   onResetBbm,
   incomeSlot,
+  extras,
+  onExtrasChange,
 }: {
   row: TimelineRow
   highlight: boolean
@@ -1030,7 +1327,11 @@ function DayCard({
   onBbmChange: (digits: string) => void
   onResetBbm: () => void
   incomeSlot: React.ReactNode
+  extras: ExtraExpense[]
+  onExtrasChange: (next: ExtraExpense[]) => void
 }) {
+  const [showExtra, setShowExtra] = React.useState(false)
+  const keluarNonIncome = r.biayaBbm + r.extra
   return (
     <Card className={`py-3 gap-2 ${highlight ? 'border-amber-500/50' : ''}`}>
       <CardContent className="space-y-2">
@@ -1062,18 +1363,26 @@ function DayCard({
                 aria-label={`KM ${r.tanggal}`}
               />
               {kmValue.trim() !== '' && (
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground"
                   onClick={onResetKm}
                   title={`Kembalikan ke ${r.kmParsed} km`}
-                  className="text-muted-foreground hover:text-foreground text-lg leading-none px-1"
                   aria-label={`Reset KM ${r.tanggal}`}
                 >
-                  ↺
-                </button>
+                  <LuRotateCcw className="size-4" aria-hidden />
+                </Button>
               )}
             </div>
             {kmValue.trim() !== '' && (
               <div className="text-[11px] text-muted-foreground">asli {r.kmParsed} km</div>
+            )}
+            {r.jamFiltered && (
+              <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
+                <LuClock className="size-3" aria-hidden />
+                {r.km} km di jam filter (penuh {r.kmParsed} km)
+              </div>
             )}
           </div>
           {withIncome && (
@@ -1105,10 +1414,32 @@ function DayCard({
               <div className="text-xs text-muted-foreground pt-0.5">belum diisi</div>
             ) : (
               <div className="font-bold tabular-nums text-xs pt-0.5">
-                {formatRp(withIncome ? r.bersih : r.biayaBbm)}
+                {formatRp(withIncome ? r.bersih : keluarNonIncome)}
               </div>
             )}
           </div>
+        </div>
+        <div className="rounded-lg border px-2 py-1.5">
+          <button
+            onClick={() => setShowExtra((v) => !v)}
+            aria-expanded={showExtra}
+            className="flex w-full items-center justify-between gap-2 text-xs"
+          >
+            <span className="inline-flex items-center gap-1 text-muted-foreground">
+              <LuPlus className="size-3.5" aria-hidden /> Extra{' '}
+              {extras.length > 0 && <b className="text-foreground tabular-nums">{formatRp(r.extra)}</b>}
+              {extras.length === 0 && <span className="tabular-nums"> —</span>}
+            </span>
+            <span className="inline-flex items-center gap-0.5 text-muted-foreground">
+              {showExtra ? <LuChevronDown className="size-3.5" aria-hidden /> : <LuChevronRight className="size-3.5" aria-hidden />}
+              {showExtra ? 'tutup' : 'kelola'}
+            </span>
+          </button>
+          {showExtra && (
+            <div className="pt-1.5">
+              <ExtraExpenseEditor tanggal={r.tanggal} value={extras} onChange={onExtrasChange} />
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

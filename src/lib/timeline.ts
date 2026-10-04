@@ -32,6 +32,12 @@ export interface DailyKm {
   tanggal: string // YYYY-MM-DD
   totalKm: number
   rincian: Record<TimelineKind, number>
+  /**
+   * KM motor per jam lokal 0–23 (index = jam mulai, mis. [7] = 07:00–08:00).
+   * Dipakai filter jam (mis. jam kerja 07:00–17:00). Opsional agar
+   * data lama / sumber lain tetap bisa dipakai (fallback = KM penuh).
+   */
+  perJamMotor?: number[]
   /** Info rute harian (opsional; tidak ada bila titik lokasi tak ditemukan). */
   maps?: DayMaps
 }
@@ -224,6 +230,22 @@ function extractActivityType(act: unknown): string {
   return ''
 }
 
+/** Jam lokal 0–23 dari startTime ISO. -1 bila tidak bisa diparse. */
+function hourOf(startTime: string): number {
+  const d = new Date(startTime)
+  if (Number.isFinite(d.getTime())) {
+    const h = d.getHours()
+    if (h >= 0 && h <= 23) return h
+  }
+  // Fallback: ambil HH langsung dari string ISO ("...T07:30...").
+  const m = /T(\d{2}):/.exec(startTime)
+  if (m) {
+    const h = Number(m[1])
+    if (Number.isFinite(h) && h >= 0 && h <= 23) return h
+  }
+  return -1
+}
+
 function buildDayMaps(acc: DayMapsAcc): DayMaps | undefined {
   const origin = acc.firstStart?.ll ?? acc.firstPath?.ll
   const destination = acc.lastEnd?.ll ?? acc.lastPath?.ll
@@ -279,6 +301,7 @@ export function parseTimelineJson(input: unknown): TimelineParseResult {
   }
 
   const perDay = new Map<string, Record<TimelineKind, number>>()
+  const perDayHour = new Map<string, number[]>()
   const mapsAcc = new Map<string, DayMapsAcc>()
   let skipped = 0
 
@@ -307,6 +330,22 @@ export function parseTimelineJson(input: unknown): TimelineParseResult {
         perDay.set(tanggal, agg)
       }
       agg[kind] += meters
+      // Bucket per jam (hanya motor) untuk filter jam kerja.
+      if (kind === 'motor' && meters > 0) {
+        let buckets = perDayHour.get(tanggal)
+        if (!buckets) {
+          buckets = new Array(24).fill(0)
+          perDayHour.set(tanggal, buckets)
+        }
+        const h = hourOf(startTime)
+        if (h >= 0) buckets[h] += meters
+        else {
+          // Jam tak diketahui: sebar rata agar total tetap benar
+          // (filter jam akan menganggapnya di luar jam kerja bila ketat).
+          // Simpan di bucket 12 sebagai netral? Tidak — abaikan distribusi,
+          // total harian tetap dari `agg`. Bucket hanya untuk filter.
+        }
+      }
 
       // --- Titik awal/akhir hari dari activity.start / activity.end ---
       const startLL = parseLatLng(actRec.start)
@@ -397,7 +436,15 @@ export function parseTimelineJson(input: unknown): TimelineParseResult {
       const totalKm = round2(rincian.motor + rincian.mobil + rincian.jalan + rincian.lain)
       const acc = mapsAcc.get(tanggal)
       const maps = acc ? buildDayMaps(acc) : undefined
-      return { tanggal, totalKm, rincian, ...(maps ? { maps } : {}) }
+      const hourMeters = perDayHour.get(tanggal)
+      const perJamMotor = hourMeters ? hourMeters.map((m) => round2(m / 1000)) : undefined
+      return {
+        tanggal,
+        totalKm,
+        rincian,
+        ...(perJamMotor ? { perJamMotor } : {}),
+        ...(maps ? { maps } : {}),
+      }
     })
     .sort((a, b) => (a.tanggal < b.tanggal ? -1 : 1))
 

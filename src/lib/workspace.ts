@@ -140,21 +140,6 @@ export function workspaceSubtitle(ws: Workspace | null | undefined): string {
   return JOB_LABEL[ws.jobType ?? 'pribadi']
 }
 
-export function workspaceIcon(ws: Workspace | null | undefined): string {
-  if (!ws) return '🛵'
-  if (ws.role === 'ojol') return '🛵'
-  switch (ws.jobType) {
-    case 'komuter':
-      return '🏢'
-    case 'kurir':
-      return '📦'
-    case 'travel':
-      return '🧭'
-    default:
-      return '🏍️'
-  }
-}
-
 export function logKey(workspaceId: string | null): string {
   return workspaceId ? `movana:log-harian:${workspaceId}` : 'movana:log-harian'
 }
@@ -177,6 +162,8 @@ export interface LogEntry {
   rincianKm?: { motor: number; mobil: number; jalan: number; lain: number }
   /** Rincian pendapatan per platform (mode multi). Opsional. */
   rincian?: { platform: string; jumlah: number }[]
+  /** Rincian pengeluaran tambahan per kategori. Total = extraOf(). Disinkron ke biayaLain saat simpan. */
+  rincianBiaya?: { kategori: string; jumlah: number }[]
 }
 
 /** KM sebuah entri: prioritas totalKm (estimasi Linimasa), fallback selisih odometer */
@@ -199,9 +186,20 @@ export function biayaLainOf(e: Pick<LogEntry, 'biayaLain'>): number {
     : 0
 }
 
+/**
+ * Total pengeluaran tambahan: jumlah rincianBiaya bila ada,
+ * fallback ke biayaLain untuk entri lama / mode simple.
+ */
+export function extraOf(e: Pick<LogEntry, 'biayaLain' | 'rincianBiaya'>): number {
+  if (Array.isArray(e.rincianBiaya) && e.rincianBiaya.length > 0) {
+    return e.rincianBiaya.reduce((a, r) => a + (Math.max(0, Math.round(Number(r?.jumlah) || 0))), 0)
+  }
+  return biayaLainOf(e)
+}
+
 /** Bersih = kotor − (BBM + lain). Untuk mode tanpa pendapatan (kotor 0) hasilnya minus = pengeluaran. */
-export function bersihOf(e: Pick<LogEntry, 'kotor' | 'biayaBensin' | 'biayaLain'>): number {
-  return (Math.round(e.kotor) || 0) - bbmOf(e) - biayaLainOf(e)
+export function bersihOf(e: Pick<LogEntry, 'kotor' | 'biayaBensin' | 'biayaLain' | 'rincianBiaya'>): number {
+  return (Math.round(e.kotor) || 0) - bbmOf(e) - extraOf(e)
 }
 
 function importHashKey(workspaceId: string | null): string {

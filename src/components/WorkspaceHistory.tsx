@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Pencil, Trash2 } from 'lucide-react'
+import { LuPencil, LuTrash2 } from 'react-icons/lu'
 import type { Platform } from '~/lib/calc'
 import type { NonOjolJob, Workspace } from '~/lib/workspace'
 import {
@@ -78,7 +78,7 @@ export function WorkspaceHistory({
                         </Button>
                       )}
                       <Button variant="outline" size="sm" onClick={() => setEditingId(w.id)}>
-                        <Pencil aria-hidden /> Edit
+                        <LuPencil aria-hidden /> Edit
                       </Button>
                       <Button
                         variant="outline"
@@ -86,7 +86,7 @@ export function WorkspaceHistory({
                         className="text-destructive border-destructive/40 hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setConfirmId(w.id)}
                       >
-                        <Trash2 aria-hidden /> Hapus
+                        <LuTrash2 aria-hidden /> Hapus
                       </Button>
                     </div>
                   )}

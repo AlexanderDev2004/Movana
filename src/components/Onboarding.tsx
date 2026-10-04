@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { LuArrowLeft } from 'react-icons/lu'
 import type { NonOjolJob, Role } from '~/lib/workspace'
 import {
   JOB_DESC,
@@ -163,7 +163,7 @@ export function Onboarding({
       <div className="flex gap-2 items-center pt-1">
         {step > 1 && (
           <Button variant="outline" onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3)}>
-            <ArrowLeft aria-hidden /> Kembali
+            <LuArrowLeft aria-hidden /> Kembali
           </Button>
         )}
         {step === 2 && (

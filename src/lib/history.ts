@@ -1,7 +1,35 @@
-import { bbmOf, bersihOf, biayaLainOf, kmOf, logKey } from './workspace'
+import { bbmOf, bersihOf, extraOf, kmOf, logKey } from './workspace'
 import type { LogEntry } from './workspace'
 
-export type Rentang = 'minggu' | 'bulan' | 'semua' | 'custom'
+/**
+ * Preset rentang Riwayat — sama dengan preset Import Timeline agar
+ * preferensi & mental model konsisten di kedua halaman.
+ */
+export type Rentang = 'today' | '7d' | '30d' | 'month' | 'all' | 'custom'
+
+/** Id rentang lama (sebelum penyatuan preset) → dipetakan agar filter tersimpan lama tetap valid. */
+const LEGACY_RENTANG: Record<string, Rentang> = {
+  minggu: '7d',
+  bulan: 'month',
+  semua: 'all',
+}
+
+export function normalizeRentang(raw: unknown): Rentang {
+  if (typeof raw !== 'string') return 'all'
+  if (raw === 'today' || raw === '7d' || raw === '30d' || raw === 'month' || raw === 'all' || raw === 'custom') {
+    return raw
+  }
+  return LEGACY_RENTANG[raw] ?? 'all'
+}
+
+export const RENTANG_LIST: { id: Rentang; label: string }[] = [
+  { id: 'today', label: 'Hari ini' },
+  { id: '7d', label: '7 hari' },
+  { id: '30d', label: '30 hari' },
+  { id: 'month', label: 'Bulan ini' },
+  { id: 'all', label: 'Semua' },
+  { id: 'custom', label: 'Custom' },
+]
 
 export interface HistoryFilter {
   rentang: Rentang
@@ -18,6 +46,8 @@ export interface HistorySummary {
   totalKm: number
   totalBbm: number
   totalKotor: number
+  totalExtra: number
+  totalKeluar: number
   jumlahHari: number
 }
 
@@ -33,7 +63,28 @@ function isValidEntry(e: unknown): e is LogEntry {
   )
 }
 
+function normalizeRincianBiaya(raw: unknown): LogEntry['rincianBiaya'] {
+  if (!Array.isArray(raw)) return undefined
+  const out: { kategori: string; jumlah: number }[] = []
+  for (const r of raw) {
+    if (!r || typeof r !== 'object') continue
+    const o = r as Record<string, unknown>
+    if (typeof o.kategori !== 'string') continue
+    const jumlah = Math.max(0, Math.round(Number(o.jumlah) || 0))
+    out.push({ kategori: o.kategori.trim().toLowerCase() || 'lainnya', jumlah })
+    if (out.length >= 20) break
+  }
+  return out.length > 0 ? out : undefined
+}
+
 function normalize(e: LogEntry): LogEntry {
+  const rincianBiaya = normalizeRincianBiaya(e.rincianBiaya)
+  // Sinkronkan biayaLain dari rincian bila rincian ada (data import baru).
+  const biayaLain = rincianBiaya
+    ? rincianBiaya.reduce((a, r) => a + r.jumlah, 0)
+    : typeof e.biayaLain === 'number' && Number.isFinite(e.biayaLain)
+      ? Math.max(0, Math.round(e.biayaLain))
+      : 0
   return {
     tanggal: e.tanggal,
     odoAwal: Math.round(Number(e.odoAwal) || 0),
@@ -41,10 +92,11 @@ function normalize(e: LogEntry): LogEntry {
     kotor: Math.round(Number(e.kotor) || 0),
     totalKm: typeof e.totalKm === 'number' && Number.isFinite(e.totalKm) ? e.totalKm : undefined,
     biayaBensin: bbmOf(e),
-    biayaLain: biayaLainOf(e),
+    biayaLain,
     sumber: e.sumber === 'linimasa' ? 'linimasa' : 'manual',
     rincianKm: e.rincianKm,
     rincian: Array.isArray(e.rincian) ? e.rincian : undefined,
+    ...(rincianBiaya ? { rincianBiaya } : {}),
   }
 }
 
@@ -85,6 +137,7 @@ export interface LogPatch {
   kotor?: number
   biayaBensin?: number
   biayaLain?: number
+  rincianBiaya?: { kategori: string; jumlah: number }[]
   /** KM final. Untuk entri manual (odo) menimpa via totalKm agar selisih odo tidak hilang. */
   km?: number
 }
@@ -100,8 +153,19 @@ export function updateLog(workspaceId: string, tanggal: string, patch: LogPatch)
     if (patch.kotor !== undefined) next.kotor = Math.max(0, Math.round(Number(patch.kotor) || 0))
     if (patch.biayaBensin !== undefined)
       next.biayaBensin = Math.max(0, Math.round(Number(patch.biayaBensin) || 0))
-    if (patch.biayaLain !== undefined)
+    if (patch.rincianBiaya !== undefined) {
+      const norm = normalizeRincianBiaya(patch.rincianBiaya)
+      if (norm) {
+        next.rincianBiaya = norm
+        next.biayaLain = norm.reduce((a, r) => a + r.jumlah, 0)
+      } else {
+        delete next.rincianBiaya
+        next.biayaLain = 0
+      }
+    } else if (patch.biayaLain !== undefined) {
       next.biayaLain = Math.max(0, Math.round(Number(patch.biayaLain) || 0))
+      delete next.rincianBiaya
+    }
     if (patch.km !== undefined) {
       const km = Math.max(0, Number(patch.km) || 0)
       if (cur.sumber === 'linimasa' || cur.totalKm !== undefined || cur.odoAwal === 0) {
@@ -127,7 +191,7 @@ export function toLocalDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-/** Senin minggu berjalan (lokal). */
+/** Senin minggu berjalan (lokal). Disimpan untuk kompatibilitas tes lama. */
 export function mondayOfWeek(now: Date): string {
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const offset = (d.getDay() + 6) % 7 // Senin = 0
@@ -139,19 +203,31 @@ export function firstOfMonth(now: Date): string {
   return toLocalDate(new Date(now.getFullYear(), now.getMonth(), 1))
 }
 
+function addDays(today: string, delta: number): string {
+  const d = new Date(`${today}T00:00:00`)
+  if (!Number.isFinite(d.getTime())) return today
+  d.setDate(d.getDate() + delta)
+  return toLocalDate(d)
+}
+
 /** Batas {dari, sampai} inklusif untuk rentang cepat. null = tanpa batas (semua). */
 export function rangeBounds(
-  rentang: Rentang,
+  rentang: Rentang | string,
   now: Date,
   dari?: string,
   sampai?: string,
 ): { dari: string; sampai: string } | null {
-  if (rentang === 'semua') return null
-  if (rentang === 'minggu') return { dari: mondayOfWeek(now), sampai: toLocalDate(now) }
-  if (rentang === 'bulan') return { dari: firstOfMonth(now), sampai: toLocalDate(now) }
+  const r = normalizeRentang(rentang)
+  const today = toLocalDate(now)
+  if (r === 'all') return null
+  if (r === 'today') return { dari: today, sampai: today }
+  if (r === '7d') return { dari: addDays(today, -6), sampai: today }
+  if (r === '30d') return { dari: addDays(today, -29), sampai: today }
+  if (r === 'month') return { dari: firstOfMonth(now), sampai: today }
   const a = (dari ?? '').trim()
   const b = (sampai ?? '').trim()
   if (!a && !b) return null
+  if (a && b && a > b) return { dari: b, sampai: a }
   // Bila satu sisi kosong, sisi itu dianggap tanpa batas.
   return { dari: a || '0000-00-00', sampai: b || '9999-99-99' }
 }
@@ -171,11 +247,15 @@ export function filterLogs(logs: LogEntry[], filter: HistoryFilter, now: Date = 
 /** Ringkasan kartu atas (dihitung dari log yang sudah difilter). */
 export function summarize(logs: LogEntry[]): HistorySummary {
   const totalKmRaw = logs.reduce((a, e) => a + kmOf(e), 0)
+  const totalExtra = logs.reduce((a, e) => a + extraOf(e), 0)
+  const totalBbm = logs.reduce((a, e) => a + bbmOf(e), 0)
   return {
     totalBersih: logs.reduce((a, e) => a + bersihOf(e), 0),
     totalKm: Math.round(totalKmRaw * 100) / 100,
-    totalBbm: logs.reduce((a, e) => a + bbmOf(e), 0),
+    totalBbm,
     totalKotor: logs.reduce((a, e) => a + (Math.round(e.kotor) || 0), 0),
+    totalExtra,
+    totalKeluar: totalBbm + totalExtra,
     jumlahHari: logs.length,
   }
 }

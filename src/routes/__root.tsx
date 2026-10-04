@@ -10,6 +10,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import * as React from 'react'
 import type { QueryClient } from '@tanstack/react-query'
+import { LuBike } from 'react-icons/lu'
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary'
 import { NotFound } from '~/components/NotFound'
 import { WorkspaceNav } from '~/components/WorkspaceNav'
@@ -84,7 +85,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <div className="p-2 flex gap-3 text-base items-center flex-wrap">
           <Link to="/" activeProps={{ className: 'font-bold' }} activeOptions={{ exact: true }}>
-            🛵 Movana
+            <span className="inline-flex items-center gap-1.5">
+              <LuBike className="size-5" aria-hidden /> Movana
+            </span>
           </Link>{' '}
           <Link to="/workspace" activeProps={{ className: 'font-bold' }}>
             Workspace
