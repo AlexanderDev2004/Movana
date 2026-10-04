@@ -1,6 +1,8 @@
 import * as React from 'react'
 import { Link } from '@tanstack/react-router'
-import { LuBike, LuCar, LuChevronDown, LuChevronRight, LuClock, LuFileJson, LuFootprints, LuMapPin, LuPencil, LuPlus, LuRotateCcw, LuTriangleAlert, LuUpload, LuZap } from 'react-icons/lu'
+import { useTable } from '@tanstack/react-table'
+import type { ColumnDef, Row } from '@tanstack/react-table'
+import { LuBike, LuCar, LuChevronDown, LuChevronRight, LuChevronsUpDown, LuChevronUp, LuClock, LuFileJson, LuFootprints, LuMapPin, LuPencil, LuPlus, LuRotateCcw, LuTriangleAlert, LuUpload, LuZap } from 'react-icons/lu'
 import { formatRp } from '~/lib/calc'
 import type { Platform } from '~/lib/calc'
 import { saveTimelineImport } from '~/lib/daily-log'
@@ -19,6 +21,8 @@ import {
   todayLocal,
 } from '~/lib/timeline-import'
 import type { TimelineFilter, TimelineRow } from '~/lib/timeline-import'
+import { movanaTableFeatures } from '~/lib/tables'
+import type { MovanaTableFeatures } from '~/lib/tables'
 import { normalizeExpenses, totalExtra } from '~/lib/extra-expense'
 import type { ExtraExpense } from '~/lib/extra-expense'
 import { hashText, parseTimelineJson } from '~/lib/timeline'
@@ -67,7 +71,6 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   const [platEdit, setPlatEdit] = React.useState<Record<string, Record<string, string>>>({})
 
   const [view, setView] = React.useState<'ringkas' | 'detail'>('ringkas')
-  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
   const [filter, setFilter] = React.useState<TimelineFilter>(() => ({
     ...DEFAULT_FILTER,
     minKm: DEFAULT_MIN_KM,
@@ -121,7 +124,6 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
     setBbmEdit({})
     setKotorEdit({})
     setPlatEdit({})
-    setExpanded({})
     setExtraEdit({})
     setFilter({ ...DEFAULT_FILTER, minKm: DEFAULT_MIN_KM })
     setShowJam(false)
@@ -152,8 +154,6 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
       delete next[tanggal]
       return next
     })
-
-  const toggleExpand = (tanggal: string) => setExpanded((p) => ({ ...p, [tanggal]: !p[tanggal] }))
 
   /** Hari dianggap "sudah isi pendapatan" bila user mengetik sesuatu (termasuk 0). */
   const isFilled = React.useCallback(
@@ -223,6 +223,41 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
 
   const avgKm = totals.days > 0 ? totals.totalKm / totals.days : 0
   const visibleFilled = withIncome ? visible.filter((r) => isFilled(r.tanggal)) : []
+  const detail = view === 'detail'
+
+  const columns = React.useMemo(
+    () =>
+      makeTimelineColumns({
+        detail,
+        withIncome,
+        multi,
+        platforms: ws.platforms,
+        kmEdit,
+        bbmEdit,
+        kotorEdit,
+        platEdit,
+        isFilled,
+        setKmEdit,
+        setBbmEdit,
+        setKotorEdit,
+        setPlatEdit,
+        resetKm,
+      }),
+    [detail, withIncome, multi, ws.platforms, kmEdit, bbmEdit, kotorEdit, platEdit, isFilled],
+  )
+
+  const table = useTable({
+    key: 'timeline-import',
+    features: movanaTableFeatures,
+    columns,
+    data: visible,
+    getRowId: (row) => row.tanggal,
+    // Koreksi ketikan tidak boleh menutup rincian yang sedang dibuka.
+    autoResetExpanded: false,
+  })
+
+  const tableRows = table.getRowModel().rows
+  const colCount = table.getAllLeafColumns().length
 
   const kplNum = Number(kmPerLiter)
   const kplWarn = kmPerLiter.trim() !== '' && Number.isFinite(kplNum) && (kplNum < 25 || kplNum > 60)
@@ -322,15 +357,12 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
     )
   }
 
-  const hasilLabel = withIncome ? 'Bersih' : 'Keluar'
-  const detail = view === 'detail'
   const footPendapatan = visible.reduce((a, r) => a + r.pendapatan, 0)
   const footBiaya = visible.reduce((a, r) => a + r.biayaBbm, 0)
   const footExtra = visible.reduce((a, r) => a + r.extra, 0)
   const footBersihVisible = visible.reduce((a, r) => a + r.bersih, 0)
   const footKeluarVisible = footBiaya + footExtra
   const narrow = isFilterNarrow(filter)
-  const colSpan = (detail ? 8 : 6) - (withIncome ? 0 : 1)
 
   return (
     <div className="space-y-4">
@@ -707,43 +739,46 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
         </p>
       )}
 
-      {/* Tampilan kartu (layar kecil) */}
+      {/* Tampilan kartu (layar kecil) — urutan mengikuti sorting tabel */}
       <div className="md:hidden space-y-2">
-        {visible.map((r) => (
-          <DayCard
-            key={r.tanggal}
-            row={r}
-            highlight={r.km > avgKm && avgKm > 0}
-            withIncome={withIncome}
-            filled={isFilled(r.tanggal)}
-            kmValue={kmEdit[r.tanggal] ?? ''}
-            onKmChange={(v) => setKmEdit((p) => ({ ...p, [r.tanggal]: v }))}
-            onResetKm={() => resetKm(r.tanggal)}
-            bbmValue={bbmEdit[r.tanggal] ?? ''}
-            onBbmChange={(digits) => setBbmEdit((p) => ({ ...p, [r.tanggal]: digits }))}
-            onResetBbm={() =>
-              setBbmEdit((p) => {
-                if (!(r.tanggal in p)) return p
-                const next = { ...p }
-                delete next[r.tanggal]
-                return next
-              })
-            }
-            extras={extraEdit[r.tanggal] ?? []}
-            onExtrasChange={(next) => setExtraEdit((p) => ({ ...p, [r.tanggal]: next }))}
-            incomeSlot={
-              <IncomeInputs
-                tanggal={r.tanggal}
-                multi={multi}
-                platforms={ws.platforms}
-                kotorEdit={kotorEdit}
-                platEdit={platEdit}
-                setKotorEdit={setKotorEdit}
-                setPlatEdit={setPlatEdit}
-              />
-            }
-          />
-        ))}
+        {tableRows.map((row) => {
+          const r = row.original
+          return (
+            <DayCard
+              key={row.id}
+              row={r}
+              highlight={r.km > avgKm && avgKm > 0}
+              withIncome={withIncome}
+              filled={isFilled(r.tanggal)}
+              kmValue={kmEdit[r.tanggal] ?? ''}
+              onKmChange={(v) => setKmEdit((p) => ({ ...p, [r.tanggal]: v }))}
+              onResetKm={() => resetKm(r.tanggal)}
+              bbmValue={bbmEdit[r.tanggal] ?? ''}
+              onBbmChange={(digits) => setBbmEdit((p) => ({ ...p, [r.tanggal]: digits }))}
+              onResetBbm={() =>
+                setBbmEdit((p) => {
+                  if (!(r.tanggal in p)) return p
+                  const next = { ...p }
+                  delete next[r.tanggal]
+                  return next
+                })
+              }
+              extras={extraEdit[r.tanggal] ?? []}
+              onExtrasChange={(next) => setExtraEdit((p) => ({ ...p, [r.tanggal]: next }))}
+              incomeSlot={
+                <IncomeInputs
+                  tanggal={r.tanggal}
+                  multi={multi}
+                  platforms={ws.platforms}
+                  kotorEdit={kotorEdit}
+                  platEdit={platEdit}
+                  setKotorEdit={setKotorEdit}
+                  setPlatEdit={setPlatEdit}
+                />
+              }
+            />
+          )
+        })}
       </div>
 
       {/* Tampilan tabel (layar ≥ md) */}
@@ -752,137 +787,90 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
           className={`w-full text-sm tabular-nums ${detail ? 'min-w-[800px]' : 'min-w-[640px]'}`}
         >
           <thead>
-            <tr className="bg-muted text-left text-xs text-muted-foreground">
-              <th className="px-2 py-2 font-medium">Tanggal</th>
-              <th className="px-2 py-2 font-medium text-right">KM</th>
-              {detail && <th className="px-2 py-2 font-medium text-right">Liter</th>}
-              <th className="px-2 py-2 font-medium text-right" title="Biaya BBM">
-                BBM
-              </th>
-              <th className="px-2 py-2 font-medium text-right" title="Pengeluaran tambahan">
-                Extra
-              </th>
-              {withIncome && <th className="px-2 py-2 font-medium text-right">Pendapatan</th>}
-              <th className="px-2 py-2 font-medium text-right whitespace-nowrap">{hasilLabel}</th>
-              {detail && <th className="px-2 py-2 font-medium">Keterangan</th>}
+            <tr className="bg-muted text-xs text-muted-foreground">
+              {table.getHeaderGroups().map((hg) =>
+                hg.headers.map((header) => {
+                  const canSort = header.column.getCanSort()
+                  const sorted = header.column.getIsSorted()
+                  const right = TL_RIGHT.has(header.column.id)
+                  return (
+                    <th
+                      key={header.id}
+                      aria-sort={
+                        sorted === 'asc'
+                          ? 'ascending'
+                          : sorted === 'desc'
+                            ? 'descending'
+                            : canSort
+                              ? 'none'
+                              : undefined
+                      }
+                      className={`px-2 py-2 font-medium ${right ? 'text-right' : 'text-left'}`}
+                    >
+                      {header.isPlaceholder ? null : canSort ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                          onClick={header.column.getToggleSortingHandler()}
+                          title={`Urutkan ${header.column.id}`}
+                          aria-label={`Urutkan berdasarkan ${header.column.id}`}
+                        >
+                          <table.FlexRender header={header} />
+                          {sorted === 'asc' ? (
+                            <LuChevronUp className="size-3.5" aria-hidden />
+                          ) : sorted === 'desc' ? (
+                            <LuChevronDown className="size-3.5" aria-hidden />
+                          ) : (
+                            <LuChevronsUpDown className="size-3.5 opacity-40" aria-hidden />
+                          )}
+                        </Button>
+                      ) : (
+                        <table.FlexRender header={header} />
+                      )}
+                    </th>
+                  )
+                }),
+              )}
             </tr>
           </thead>
           <tbody>
-            {visible.map((r) => (
-              <React.Fragment key={r.tanggal}>
-                <tr className={`group border-t ${r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}`}>
-                  <td className="px-2 py-1.5 whitespace-nowrap">
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-muted-foreground"
-                        onClick={() => toggleExpand(r.tanggal)}
-                        aria-expanded={!!expanded[r.tanggal]}
-                        aria-label={expanded[r.tanggal] ? `Tutup rincian ${r.tanggal}` : `Buka rincian ${r.tanggal}`}
-                      >
-                        {expanded[r.tanggal] ? <LuChevronDown className="size-4" aria-hidden /> : <LuChevronRight className="size-4" aria-hidden />}
-                      </Button>
-                      <DateCell tanggal={r.tanggal} />
-                      <MapsIconLink maps={r.maps} tanggal={r.tanggal} />
-                    </div>
-                    {detail && (
-                      <div className="mt-1 space-y-1">
-                        <ModeBadges row={r} />
-                        {r.jamFiltered && (
-                          <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
-                            <LuClock className="size-3" aria-hidden />
-                            {r.km} km di jam filter (penuh {r.kmParsed} km)
-                          </div>
-                        )}
-                        <MapsDetailLink maps={r.maps} tanggal={r.tanggal} />
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                    <KmCell
-                      row={r}
-                      value={kmEdit[r.tanggal] ?? ''}
-                      onChange={(v) => setKmEdit((p) => ({ ...p, [r.tanggal]: v }))}
-                      onReset={() => resetKm(r.tanggal)}
-                      clickToEdit={!detail}
-                    />
-                  </td>
-                  {detail && <td className="px-2 py-1.5 text-right whitespace-nowrap">{r.liter}</td>}
-                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                    <BbmCell
-                      row={r}
-                      value={bbmEdit[r.tanggal] ?? ''}
-                      onChange={(digits) => setBbmEdit((p) => ({ ...p, [r.tanggal]: digits }))}
-                      onReset={() =>
-                        setBbmEdit((p) => {
-                          if (!(r.tanggal in p)) return p
-                          const next = { ...p }
-                          delete next[r.tanggal]
-                          return next
-                        })
-                      }
-                      clickToEdit={!detail}
-                    />
-                  </td>
-                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                    <ExtraCell
-                      row={r}
-                      expanded={!!expanded[r.tanggal]}
-                      onToggle={() => toggleExpand(r.tanggal)}
-                    />
-                  </td>
-                  {withIncome && (
-                    <td className="px-2 py-1.5 text-right">
-                      <IncomeInputs
-                        tanggal={r.tanggal}
-                        multi={multi}
-                        platforms={ws.platforms}
-                        kotorEdit={kotorEdit}
-                        platEdit={platEdit}
-                        setKotorEdit={setKotorEdit}
-                        setPlatEdit={setPlatEdit}
-                      />
-                    </td>
-                  )}
-                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                    {withIncome && !isFilled(r.tanggal) ? (
-                      <span className="text-muted-foreground font-normal text-xs">belum diisi</span>
-                    ) : (
-                      <span className="font-bold">
-                        {formatRp(withIncome ? r.bersih : r.biayaBbm + r.extra)}
-                      </span>
-                    )}
-                  </td>
-                  {detail && (
-                    <td className="px-2 py-1.5 text-xs text-muted-foreground whitespace-nowrap">
-                      {r.keterangan}
-                    </td>
-                  )}
-                </tr>
-                {expanded[r.tanggal] && (
-                  <tr className={r.km > avgKm && avgKm > 0 ? 'bg-amber-500/[0.07]' : ''}>
-                    <td colSpan={colSpan} className="px-2 py-1.5 bg-muted/40">
-                      <div className="space-y-1.5">
-                        {!detail && (
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            <ModeBadges row={r} />
-                            <span className="tabular-nums">Liter {r.liter}</span>
-                            <span>{r.keterangan}</span>
-                            <MapsDetailLink maps={r.maps} tanggal={r.tanggal} compact />
-                          </div>
-                        )}
-                        <ExtraExpenseEditor
-                          tanggal={r.tanggal}
-                          value={extraEdit[r.tanggal] ?? []}
-                          onChange={(next) => setExtraEdit((p) => ({ ...p, [r.tanggal]: next }))}
-                        />
-                      </div>
-                    </td>
+            {tableRows.map((row) => {
+              const r = row.original
+              const highlight = r.km > avgKm && avgKm > 0
+              return (
+                <React.Fragment key={row.id}>
+                  <tr className={`group border-t ${highlight ? 'bg-amber-500/[0.07]' : ''}`}>
+                    {row.getAllCells().map((cell) => (
+                      <td key={cell.id} className={tlCellClass(cell.column.id)}>
+                        <table.FlexRender cell={cell} />
+                      </td>
+                    ))}
                   </tr>
-                )}
-              </React.Fragment>
-            ))}
+                  {row.getIsExpanded() && (
+                    <tr className={highlight ? 'bg-amber-500/[0.07]' : ''}>
+                      <td colSpan={colCount} className="px-2 py-1.5 bg-muted/40">
+                        <div className="space-y-1.5">
+                          {!detail && (
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <ModeBadges row={r} />
+                              <span className="tabular-nums">Liter {r.liter}</span>
+                              <span>{r.keterangan}</span>
+                              <MapsDetailLink maps={r.maps} tanggal={r.tanggal} compact />
+                            </div>
+                          )}
+                          <ExtraExpenseEditor
+                            tanggal={r.tanggal}
+                            value={extraEdit[r.tanggal] ?? []}
+                            onChange={(next) => setExtraEdit((p) => ({ ...p, [r.tanggal]: next }))}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              )
+            })}
           </tbody>
           <tfoot>
             <tr className="border-t bg-muted/50 font-bold">
@@ -959,11 +947,199 @@ export function TimelineImport({ ws }: { ws: Workspace }) {
   )
 }
 
+/** Kolom angka rata kanan di tabel import. */
+const TL_RIGHT = new Set(['km', 'liter', 'bbm', 'extra', 'pendapatan', 'bersih'])
+
+function tlCellClass(columnId: string): string {
+  if (TL_RIGHT.has(columnId)) return 'px-2 py-1.5 text-right whitespace-nowrap'
+  if (columnId === 'tanggal') return 'px-2 py-1.5 whitespace-nowrap'
+  if (columnId === 'keterangan') return 'px-2 py-1.5 text-xs text-muted-foreground whitespace-nowrap'
+  return 'px-2 py-1.5'
+}
+
+interface TimelineColumnOpts {
+  detail: boolean
+  withIncome: boolean
+  multi: boolean
+  platforms: Platform[]
+  kmEdit: Record<string, string>
+  bbmEdit: Record<string, string>
+  kotorEdit: Record<string, string>
+  platEdit: Record<string, Record<string, string>>
+  isFilled: (tanggal: string) => boolean
+  setKmEdit: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  setBbmEdit: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  setKotorEdit: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  setPlatEdit: React.Dispatch<React.SetStateAction<Record<string, Record<string, string>>>>
+  resetKm: (tanggal: string) => void
+}
+
 /**
- * Sel Extra mode Ringkas: hanya total (Rp 35.000 / —). Ketuk untuk expand
- * ke rincian + editor. Tetap satu baris agar tabel tidak ramai.
+ * Definisi kolom tabel import — sel edit (KM/BBM/pendapatan) membaca state
+ * draf komponen, nilai sort diambil dari baris final. Dibangun ulang saat
+ * input berubah; state sorting/expanded tabel (keyed by tanggal) bertahan.
  */
-function ExtraCell({ row: r, expanded, onToggle }: { row: TimelineRow; expanded: boolean; onToggle: () => void }) {
+function makeTimelineColumns(o: TimelineColumnOpts): ColumnDef<MovanaTableFeatures, TimelineRow>[] {
+  const cols: ColumnDef<MovanaTableFeatures, TimelineRow>[] = [
+    {
+      accessorKey: 'tanggal',
+      header: 'Tanggal',
+      cell: (info) => {
+        const r = info.row.original
+        const expanded = info.row.getIsExpanded()
+        return (
+          <div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground"
+                onClick={info.row.getToggleExpandedHandler()}
+                aria-expanded={expanded}
+                aria-label={expanded ? `Tutup rincian ${r.tanggal}` : `Buka rincian ${r.tanggal}`}
+              >
+                {expanded ? <LuChevronDown className="size-4" aria-hidden /> : <LuChevronRight className="size-4" aria-hidden />}
+              </Button>
+              <DateCell tanggal={r.tanggal} />
+              <MapsIconLink maps={r.maps} tanggal={r.tanggal} />
+            </div>
+            {o.detail && (
+              <div className="mt-1 space-y-1">
+                <ModeBadges row={r} />
+                {r.jamFiltered && (
+                  <div className="flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums">
+                    <LuClock className="size-3" aria-hidden />
+                    {r.km} km di jam filter (penuh {r.kmParsed} km)
+                  </div>
+                )}
+                <MapsDetailLink maps={r.maps} tanggal={r.tanggal} />
+              </div>
+            )}
+          </div>
+        )
+      },
+      sortFn: 'alphanumeric',
+    },
+    {
+      accessorFn: (r) => r.km,
+      id: 'km',
+      header: 'KM',
+      cell: (info) => {
+        const r = info.row.original
+        return (
+          <KmCell
+            row={r}
+            value={o.kmEdit[r.tanggal] ?? ''}
+            onChange={(v) => o.setKmEdit((p) => ({ ...p, [r.tanggal]: v }))}
+            onReset={() => o.resetKm(r.tanggal)}
+            clickToEdit={!o.detail}
+          />
+        )
+      },
+      sortFn: 'alphanumeric',
+    },
+  ]
+  if (o.detail) {
+    cols.push({
+      accessorFn: (r) => r.liter,
+      id: 'liter',
+      header: 'Liter',
+      cell: (info) => info.getValue<number>(),
+      sortFn: 'alphanumeric',
+    })
+  }
+  cols.push(
+    {
+      accessorFn: (r) => r.biayaBbm,
+      id: 'bbm',
+      header: 'BBM',
+      cell: (info) => {
+        const r = info.row.original
+        return (
+          <BbmCell
+            row={r}
+            value={o.bbmEdit[r.tanggal] ?? ''}
+            onChange={(digits) => o.setBbmEdit((p) => ({ ...p, [r.tanggal]: digits }))}
+            onReset={() =>
+              o.setBbmEdit((p) => {
+                if (!(r.tanggal in p)) return p
+                const next = { ...p }
+                delete next[r.tanggal]
+                return next
+              })
+            }
+            clickToEdit={!o.detail}
+          />
+        )
+      },
+      sortFn: 'alphanumeric',
+    },
+    {
+      accessorFn: (r) => r.extra,
+      id: 'extra',
+      header: 'Extra',
+      cell: (info) => <ExtraCell row={info.row} />,
+      sortFn: 'alphanumeric',
+    },
+  )
+  if (o.withIncome) {
+    cols.push({
+      accessorFn: (r) => r.pendapatan,
+      id: 'pendapatan',
+      header: 'Pendapatan',
+      cell: (info) => {
+        const r = info.row.original
+        return (
+          <IncomeInputs
+            tanggal={r.tanggal}
+            multi={o.multi}
+            platforms={o.platforms}
+            kotorEdit={o.kotorEdit}
+            platEdit={o.platEdit}
+            setKotorEdit={o.setKotorEdit}
+            setPlatEdit={o.setPlatEdit}
+          />
+        )
+      },
+      sortFn: 'alphanumeric',
+    })
+  }
+  cols.push({
+    accessorFn: (r) => (o.withIncome ? r.bersih : r.biayaBbm + r.extra),
+    id: 'bersih',
+    header: o.withIncome ? 'Bersih' : 'Keluar',
+    cell: (info) => {
+      const r = info.row.original
+      if (o.withIncome && !o.isFilled(r.tanggal)) {
+        return <span className="text-muted-foreground font-normal text-xs">belum diisi</span>
+      }
+      return (
+        <span className="font-bold">
+          {formatRp(o.withIncome ? r.bersih : r.biayaBbm + r.extra)}
+        </span>
+      )
+    },
+    sortFn: 'alphanumeric',
+  })
+  if (o.detail) {
+    cols.push({
+      accessorKey: 'keterangan',
+      header: 'Keterangan',
+      cell: (info) => info.getValue<string>(),
+      enableSorting: false,
+    })
+  }
+  return cols
+}
+
+/**
+ * Sel Extra mode Ringkas: hanya total (Rp 35.000 / tombol tambah). Ketuk untuk
+ * expand ke rincian + editor. Tetap satu baris agar tabel tidak ramai.
+ */
+function ExtraCell({ row }: { row: Row<MovanaTableFeatures, TimelineRow> }) {
+  const r = row.original
+  const expanded = row.getIsExpanded()
+  const onToggle = row.getToggleExpandedHandler()
   if (r.extra <= 0) {
     return (
       <Button
